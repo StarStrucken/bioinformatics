@@ -4,3 +4,4 @@
 > take a look at current papers
 > ddefine the dataset and structure of storage for later use
 > what is out there in input and output
+> benchmarking: scalability, sampling methods, and generalizaiton
