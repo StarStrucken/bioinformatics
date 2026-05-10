@@ -8,57 +8,37 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
+from scipy.sparse.csgraph import connected_components
 from sklearn.neighbors import NearestNeighbors
 
 CELL_TABLE_NAMES = ("cells.csv.gz", "cells.csv", "cells.parquet")
 
 
-def find_file(root: Path, names: tuple[str, ...] | list[str]) -> Path:
-    search_roots = [root]
-    if root.name != "bundle":
-        search_roots.append(root / "bundle")
+def find_file(root: Path, names: tuple[str, ...]) -> Path:
+    roots = [root] if root.name == "bundle" else [root, root / "bundle"]
 
-    for search_root in search_roots:
+    for base in roots:
         for name in names:
-            candidate = search_root / name
-            if candidate.exists():
-                return candidate
+            path = base / name
+            if path.exists():
+                return path
 
-    for search_root in search_roots:
+    for base in roots:
         for name in names:
-            matches = sorted(search_root.rglob(name))
-            if matches:
-                return matches[0]
+            for path in base.rglob(name):
+                return path
 
-    joined = ", ".join(names)
-    raise FileNotFoundError(f"Could not find any of [{joined}] under {root}")
+    raise FileNotFoundError(names)
 
 
-def read_cells_table(xenium_dir: Path) -> tuple[pd.DataFrame, Path]:
-    cells_path = find_file(xenium_dir, CELL_TABLE_NAMES)
-
-    if cells_path.suffixes[-2:] == [".csv", ".gz"] or cells_path.suffix == ".csv":
-        cells = pd.read_csv(cells_path)
-    elif cells_path.suffix == ".parquet":
-        cells = pd.read_parquet(cells_path)
-    else:
-        raise ValueError(f"Unsupported cells table format: {cells_path}")
-
-    if "cell_id" not in cells.columns:
-        raise ValueError("Cells table must contain a `cell_id` column.")
-
-    required = {"x_centroid", "y_centroid"}
-    missing = sorted(required - set(cells.columns))
-    if missing:
-        raise ValueError(f"Cells table is missing required columns: {missing}")
-
-    cells = cells.copy()
+def read_cells(xenium_dir: Path):
+    path = find_file(xenium_dir, CELL_TABLE_NAMES)
+    cells = pd.read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path)
     cells["cell_id"] = cells["cell_id"].astype(str)
-    cells = cells.drop_duplicates(subset="cell_id").set_index("cell_id")
-    return cells, cells_path
+    return cells.drop_duplicates("cell_id").set_index("cell_id"), path
 
 
-def load_xenium_dataset(xenium_dir: Path):
+def load_xenium(xenium_dir: Path):
     import scanpy as sc
 
     matrix_path = find_file(xenium_dir, ("cell_feature_matrix.h5",))
@@ -66,110 +46,192 @@ def load_xenium_dataset(xenium_dir: Path):
     adata.var_names_make_unique()
     adata.obs_names = adata.obs_names.astype(str)
 
-    feature_source = "all_features"
     if "feature_types" in adata.var.columns:
-        gene_mask = adata.var["feature_types"].astype(str) == "Gene Expression"
-        if bool(gene_mask.any()):
-            adata = adata[:, gene_mask].copy()
-            feature_source = "Gene Expression"
+        mask = adata.var["feature_types"].astype(str).eq("Gene Expression")
+        adata = adata[:, mask].copy()
 
-    cells, cells_path = read_cells_table(xenium_dir)
-    shared_ids = adata.obs_names.intersection(cells.index)
-    if len(shared_ids) == 0:
-        raise ValueError("No matching cell IDs between the matrix and the cells table.")
+    cells, cells_path = read_cells(xenium_dir)
+    ids = adata.obs_names.intersection(cells.index)
 
-    adata = adata[shared_ids].copy()
-    cells = cells.loc[adata.obs_names].copy()
+    adata = adata[ids].copy()
+    cells = cells.loc[adata.obs_names]
 
+    coords = cells[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
+
+    adata.obsm["spatial"] = coords
     adata.obs["cell_id"] = adata.obs_names.astype(str)
-    adata.obs["x_centroid"] = pd.to_numeric(cells["x_centroid"], errors="coerce")
-    adata.obs["y_centroid"] = pd.to_numeric(cells["y_centroid"], errors="coerce")
+    adata.obs["x_centroid"] = coords[:, 0]
+    adata.obs["y_centroid"] = coords[:, 1]
+    adata.obs["cell_area"] = cells["cell_area"].to_numpy() if "cell_area" in cells else 0.0
+    adata.obs["nucleus_area"] = cells["nucleus_area"].to_numpy() if "nucleus_area" in cells else 0.0
 
-    if "cell_area" in cells.columns:
-        adata.obs["cell_area"] = pd.to_numeric(cells["cell_area"], errors="coerce")
-    else:
-        adata.obs["cell_area"] = np.nan
-
-    if "nucleus_area" in cells.columns:
-        adata.obs["nucleus_area"] = pd.to_numeric(cells["nucleus_area"], errors="coerce")
-    else:
-        adata.obs["nucleus_area"] = np.nan
-
-    spatial = adata.obs[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
-    valid = np.isfinite(spatial).all(axis=1)
-    if not bool(valid.all()):
-        adata = adata[valid].copy()
-        spatial = spatial[valid]
-
-    adata.obsm["spatial"] = spatial
     adata.uns["xenium_dump"] = {
         "xenium_dir": str(xenium_dir),
         "matrix_path": str(matrix_path),
         "cells_path": str(cells_path),
-        "feature_source": feature_source,
     }
     return adata
 
 
-def select_spatial_subset(adata, n_cells: int):
-    if n_cells <= 0:
-        raise ValueError("n_cells must be positive.")
+def knn_labels(coords: np.ndarray, k: int) -> np.ndarray:
+    if coords.shape[0] < 2:
+        return np.zeros(coords.shape[0], dtype=np.int32)
 
+    kk = min(k, coords.shape[0] - 1)
+    graph = NearestNeighbors(n_neighbors=kk + 1).fit(coords).kneighbors_graph(coords)
+    graph = graph.maximum(graph.T)
+
+    _, labels = connected_components(graph, directed=False)
+    return labels.astype(np.int32)
+
+
+def rough_grid(coords: np.ndarray, max_cells: int):
+    tile_target = max(max_cells // 64, 1)
+    n_tiles = int(np.ceil(coords.shape[0] / tile_target))
+
+    span = np.ptp(coords, axis=0)
+    aspect = max(float(span[0] / (span[1] + 1e-6)), 1e-6)
+
+    nx = max(1, int(np.ceil(np.sqrt(n_tiles * aspect))))
+    ny = max(1, int(np.ceil(n_tiles / nx)))
+
+    low = coords.min(axis=0)
+
+    x = np.clip(
+        ((coords[:, 0] - low[0]) / (span[0] + 1e-6) * nx).astype(int),
+        0,
+        nx - 1,
+    )
+    y = np.clip(
+        ((coords[:, 1] - low[1]) / (span[1] + 1e-6) * ny).astype(int),
+        0,
+        ny - 1,
+    )
+
+    code = y * nx + x
+    counts = np.bincount(code, minlength=nx * ny)
+
+    seed = int(counts.argmax())
+    sx, sy = seed % nx, seed // nx
+
+    nonempty = np.flatnonzero(counts)
+    tx, ty = nonempty % nx, nonempty // nx
+
+    order = nonempty[np.argsort((tx - sx) ** 2 + (ty - sy) ** 2)]
+
+    picked = []
+    total = 0
+
+    for c in order:
+        picked.append(int(c))
+        total += int(counts[c])
+        if total >= max_cells:
+            break
+
+    picked = set(picked)
+    padded = set(picked)
+
+    for c in picked:
+        cx, cy = c % nx, c // nx
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                xx, yy = cx + dx, cy + dy
+                if 0 <= xx < nx and 0 <= yy < ny:
+                    padded.add(yy * nx + xx)
+
+    core = np.flatnonzero(np.isin(code, list(picked)))
+    candidate = np.flatnonzero(np.isin(code, list(padded)))
+
+    return core, candidate
+
+
+def select_cells(adata, max_cells: int, k: int):
     coords = np.asarray(adata.obsm["spatial"], dtype=np.float32)
-    center = np.nanmedian(coords, axis=0)
-    distances = np.linalg.norm(coords - center, axis=1)
-    selected_idx = np.argsort(distances)[: min(n_cells, adata.n_obs)]
 
-    selected = adata[selected_idx].copy()
-    selected.obsm["spatial"] = coords[selected_idx].copy()
-    selected.obs["distance_to_crop_center"] = distances[selected_idx]
-    selected.uns["crop_center"] = [float(center[0]), float(center[1])]
-    return selected
+    if adata.n_obs <= max_cells:
+        out = adata.copy()
+        out.obs["island_id"] = knn_labels(coords, k)
+        out.uns["crop_mode"] = "all"
+        return out
+
+    core, candidate = rough_grid(coords, max_cells)
+
+    sub_coords = coords[candidate]
+    labels = knn_labels(sub_coords, k)
+
+    core_mask = np.zeros(adata.n_obs, dtype=bool)
+    core_mask[core] = True
+
+    core_labels = labels[core_mask[candidate]]
+    seed = coords[core].mean(axis=0)
+
+    selected_local = []
+    total = 0
+
+    for label in pd.Series(core_labels).value_counts().index:
+        local = np.flatnonzero(labels == label)
+
+        if total and total + local.size > max_cells:
+            continue
+
+        selected_local.append(local)
+        total += local.size
+
+        if total >= max_cells * 0.85:
+            break
+
+    selected_local = (
+        np.concatenate(selected_local)
+        if selected_local
+        else np.array([], dtype=np.int64)
+    )
+
+    if selected_local.size == 0 or selected_local.size > max_cells:
+        d = np.linalg.norm(sub_coords - seed, axis=1)
+        selected_local = np.argsort(d)[:max_cells]
+
+    selected = candidate[selected_local]
+
+    out = adata[selected].copy()
+    _, island_id = np.unique(labels[selected_local], return_inverse=True)
+
+    out.obs["island_id"] = island_id.astype(np.int32)
+    out.uns["crop_mode"] = "grid_knn"
+    out.uns["max_cells"] = int(max_cells)
+
+    return out
 
 
-def _per_cell_counts(x_matrix) -> tuple[np.ndarray, np.ndarray]:
-    total_counts = np.asarray(x_matrix.sum(axis=1)).ravel()
-
-    if sp.issparse(x_matrix):
-        n_detected = np.asarray(x_matrix.getnnz(axis=1)).ravel()
-    else:
-        n_detected = np.asarray((x_matrix > 0).sum(axis=1)).ravel()
-
-    return total_counts.astype(np.float32), n_detected.astype(np.int32)
+def per_cell_counts(x):
+    total = np.asarray(x.sum(axis=1)).ravel().astype(np.float32)
+    detected = np.asarray(
+        x.getnnz(axis=1) if sp.issparse(x) else (x > 0).sum(axis=1)
+    ).ravel()
+    return total, detected.astype(np.int32)
 
 
-def make_nodes_table(adata) -> pd.DataFrame:
-    total_counts, n_detected_genes = _per_cell_counts(adata.X)
+def make_nodes(adata) -> pd.DataFrame:
+    total, detected = per_cell_counts(adata.X)
 
-    nodes = pd.DataFrame(
+    return pd.DataFrame(
         {
             "node_index": np.arange(adata.n_obs, dtype=np.int64),
             "cell_id": adata.obs["cell_id"].to_numpy(dtype=str),
             "x_centroid": adata.obsm["spatial"][:, 0],
             "y_centroid": adata.obsm["spatial"][:, 1],
-            "total_counts": total_counts,
-            "n_detected_genes": n_detected_genes,
-            "cell_area": pd.to_numeric(adata.obs["cell_area"], errors="coerce").to_numpy(),
-            "nucleus_area": pd.to_numeric(
-                adata.obs["nucleus_area"], errors="coerce"
-            ).to_numpy(),
+            "island_id": adata.obs["island_id"].to_numpy(dtype=np.int32),
+            "total_counts": total,
+            "n_detected_genes": detected,
+            "cell_area": adata.obs["cell_area"].to_numpy(),
+            "nucleus_area": adata.obs["nucleus_area"].to_numpy(),
         }
     )
 
-    nodes["cell_area"] = nodes["cell_area"].fillna(0.0)
-    nodes["nucleus_area"] = nodes["nucleus_area"].fillna(0.0)
 
-    safe_cell_area = nodes["cell_area"].replace(0.0, np.nan)
-    ratio = nodes["nucleus_area"].divide(safe_cell_area)
-    nodes["nucleus_cell_area_ratio"] = (
-        ratio.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-    )
+def make_edges(nodes: pd.DataFrame, k: int) -> pd.DataFrame:
+    n = nodes.shape[0]
 
-    return nodes
-
-
-def make_knn_edges(nodes: pd.DataFrame, k: int) -> pd.DataFrame:
-    if nodes.shape[0] < 2:
+    if n < 2:
         return pd.DataFrame(
             columns=[
                 "source",
@@ -180,104 +242,115 @@ def make_knn_edges(nodes: pd.DataFrame, k: int) -> pd.DataFrame:
             ]
         )
 
-    positions = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
-    effective_k = min(max(1, k), positions.shape[0] - 1)
+    coords = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
+    kk = min(k, n - 1)
 
-    knn = NearestNeighbors(n_neighbors=effective_k + 1)
-    knn.fit(positions)
-    distances, indices = knn.kneighbors(positions)
+    dist, idx = NearestNeighbors(n_neighbors=kk + 1).fit(coords).kneighbors(coords)
 
-    edge_distance: dict[tuple[int, int], float] = {}
-    for source in range(positions.shape[0]):
-        for neighbor_offset in range(1, effective_k + 1):
-            target = int(indices[source, neighbor_offset])
-            pair = tuple(sorted((source, target)))
-            distance = float(distances[source, neighbor_offset])
+    source = np.repeat(np.arange(n), kk)
+    target = idx[:, 1:].ravel()
+    distance = dist[:, 1:].ravel()
 
-            previous = edge_distance.get(pair)
-            if previous is None or distance < previous:
-                edge_distance[pair] = distance
+    edges = pd.DataFrame(
+        {
+            "source": np.minimum(source, target),
+            "target": np.maximum(source, target),
+            "distance": distance,
+        }
+    )
 
-    rows = []
-    cell_ids = nodes["cell_id"].to_numpy(dtype=str)
-    for (source, target), distance in sorted(edge_distance.items()):
-        rows.append(
-            {
-                "source": source,
-                "target": target,
-                "source_cell_id": cell_ids[source],
-                "target_cell_id": cell_ids[target],
-                "distance": distance,
-            }
-        )
+    edges = edges.sort_values("distance")
+    edges = edges.drop_duplicates(["source", "target"])
+    edges = edges.sort_values(["source", "target"])
 
-    return pd.DataFrame(rows)
+    ids = nodes["cell_id"].to_numpy(dtype=str)
+
+    edges["source_cell_id"] = ids[edges["source"].to_numpy()]
+    edges["target_cell_id"] = ids[edges["target"].to_numpy()]
+
+    return edges[
+        [
+            "source",
+            "target",
+            "source_cell_id",
+            "target_cell_id",
+            "distance",
+        ]
+    ]
 
 
-def build_representation_arrays(nodes: pd.DataFrame, edges: pd.DataFrame):
-    feature_columns = [
+def representation(nodes: pd.DataFrame, edges: pd.DataFrame):
+    features = [
         "total_counts",
         "n_detected_genes",
         "cell_area",
         "nucleus_area",
-        "nucleus_cell_area_ratio",
+        "island_id",
     ]
-    node_features = nodes[feature_columns].to_numpy(dtype=np.float32)
-    node_positions = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
-    cell_ids = nodes["cell_id"].to_numpy(dtype=str)
 
-    if edges.empty:
-        edge_index = np.empty((2, 0), dtype=np.int64)
-    else:
-        undirected_edges = pd.concat(
-            [
-                edges[["source", "target"]],
-                edges.rename(columns={"source": "target", "target": "source"})[
-                    ["source", "target"]
-                ],
+    x = nodes[features].to_numpy(dtype=np.float32)
+    pos = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
+    ids = nodes["cell_id"].to_numpy(dtype=str)
+
+    undirected = pd.concat(
+        [
+            edges[["source", "target"]],
+            edges.rename(columns={"source": "target", "target": "source"})[
+                ["source", "target"]
             ],
-            ignore_index=True,
-        )
-        edge_index = undirected_edges.to_numpy(dtype=np.int64).T
+        ],
+        ignore_index=True,
+    )
 
-    return node_features, node_positions, edge_index, cell_ids, feature_columns
+    edge_index = undirected.to_numpy(dtype=np.int64).T
+
+    return x, pos, edge_index, ids, features
 
 
-def plot_selected_cells(nodes: pd.DataFrame, out_path: Path) -> None:
+def plot_cells(nodes: pd.DataFrame, out_path: Path):
     import matplotlib.pyplot as plt
 
     plt.figure(figsize=(7, 7))
-    plt.scatter(nodes["x_centroid"], nodes["y_centroid"], s=6, alpha=0.8)
+    plt.scatter(
+        nodes["x_centroid"],
+        nodes["y_centroid"],
+        c=nodes["island_id"],
+        s=6,
+        alpha=0.85,
+    )
     plt.gca().invert_yaxis()
     plt.axis("equal")
-    plt.xlabel("x")
-    plt.ylabel("y")
-    plt.title("Selected Xenium cells")
     plt.tight_layout()
     plt.savefig(out_path, dpi=200)
     plt.close()
 
 
-def plot_knn_graph(nodes: pd.DataFrame, edges: pd.DataFrame, out_path: Path) -> None:
+def plot_graph(nodes: pd.DataFrame, edges: pd.DataFrame, out_path: Path):
     import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
 
-    positions = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
+    pos = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
+    pairs = edges[["source", "target"]].to_numpy(dtype=np.int64)
 
-    plt.figure(figsize=(7, 7))
-    for source, target in edges[["source", "target"]].to_numpy(dtype=np.int64):
-        x1, y1 = positions[source]
-        x2, y2 = positions[target]
-        plt.plot([x1, x2], [y1, y2], linewidth=0.4, alpha=0.2, color="tab:gray")
+    fig, ax = plt.subplots(figsize=(7, 7))
 
-    plt.scatter(nodes["x_centroid"], nodes["y_centroid"], s=6, alpha=0.8, color="tab:blue")
-    plt.gca().invert_yaxis()
-    plt.axis("equal")
-    plt.xlabel("x")
-    plt.ylabel("y")
-    plt.title("kNN graph over Xenium cell coordinates")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=200)
-    plt.close()
+    if pairs.size:
+        ax.add_collection(LineCollection(pos[pairs], linewidths=0.25, alpha=0.2))
+
+    ax.scatter(
+        nodes["x_centroid"],
+        nodes["y_centroid"],
+        c=nodes["island_id"],
+        s=6,
+        alpha=0.85,
+    )
+
+    ax.invert_yaxis()
+    ax.axis("equal")
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
 
 
 def write_summary(
@@ -286,93 +359,66 @@ def write_summary(
     selected,
     nodes: pd.DataFrame,
     edges: pd.DataFrame,
-    feature_columns: list[str],
-    k_requested: int,
-) -> None:
-    x_values = nodes["x_centroid"].to_numpy(dtype=np.float32)
-    y_values = nodes["y_centroid"].to_numpy(dtype=np.float32)
-
+    features: list[str],
+    k: int,
+):
     summary = {
-        "xenium_dir": adata.uns["xenium_dump"]["xenium_dir"],
-        "matrix_path": adata.uns["xenium_dump"]["matrix_path"],
-        "cells_path": adata.uns["xenium_dump"]["cells_path"],
-        "expression_source": adata.uns["xenium_dump"]["feature_source"],
+        **adata.uns["xenium_dump"],
+        "crop_mode": selected.uns["crop_mode"],
         "n_cells_loaded": int(adata.n_obs),
-        "n_cells_selected": int(selected.n_obs),
-        "n_expression_features": int(adata.n_vars),
-        "n_edges_undirected": int(edges.shape[0]),
-        "k_neighbors_requested": int(k_requested),
-        "k_neighbors_effective": int(min(max(1, k_requested), max(selected.n_obs - 1, 1))),
-        "node_feature_columns": feature_columns,
-        "crop_center": selected.uns["crop_center"],
-        "x_range": [float(x_values.min()), float(x_values.max())],
-        "y_range": [float(y_values.min()), float(y_values.max())],
-        "files": {
-            "nodes_csv": "nodes.csv",
-            "edges_csv": "edges.csv",
-            "summary_json": "summary.json",
-            "representation_npz": "representation.npz",
-            "selected_cells_plot": "selected_cells.png",
-            "knn_graph_plot": "knn_graph.png",
-        },
+        "n_cells_dumped": int(selected.n_obs),
+        "n_features": int(adata.n_vars),
+        "k": int(k),
+        "n_edges": int(edges.shape[0]),
+        "n_islands": int(nodes["island_id"].nunique()),
+        "node_feature_columns": features,
     }
 
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Load a Xenium bundle, dump a small graph-like cell representation, and plot it.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument("--xenium-dir", type=Path, required=True, help="Xenium output directory.")
-    parser.add_argument("--out-dir", type=Path, required=True, help="Output directory.")
-    parser.add_argument("--n-cells", type=int, default=2000, help="Cells in the spatial subset.")
-    parser.add_argument("--k", type=int, default=6, help="Neighbors per node for the kNN graph.")
-    return parser.parse_args()
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--xenium-dir", type=Path, required=True)
+    p.add_argument("--out-dir", type=Path, required=True)
+    p.add_argument("--max-cells", type=int, default=50_000)
+    p.add_argument("--k", type=int, default=6)
+    return p.parse_args()
 
 
-def main() -> None:
+def main():
     args = parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
-    adata = load_xenium_dataset(args.xenium_dir)
-    selected = select_spatial_subset(adata, n_cells=args.n_cells)
+    adata = load_xenium(args.xenium_dir)
+    selected = select_cells(adata, args.max_cells, args.k)
 
-    nodes = make_nodes_table(selected)
-    edges = make_knn_edges(nodes, k=args.k)
-    node_features, node_positions, edge_index, cell_ids, feature_columns = (
-        build_representation_arrays(nodes, edges)
-    )
+    nodes = make_nodes(selected)
+    edges = make_edges(nodes, args.k)
+
+    x, pos, edge_index, ids, features = representation(nodes, edges)
 
     nodes.to_csv(args.out_dir / "nodes.csv", index=False)
     edges.to_csv(args.out_dir / "edges.csv", index=False)
+
     np.savez_compressed(
         args.out_dir / "representation.npz",
-        node_features=node_features,
-        node_positions=node_positions,
+        node_features=x,
+        node_positions=pos,
         edge_index=edge_index,
-        cell_ids=cell_ids,
-        feature_columns=np.asarray(feature_columns, dtype=str),
+        cell_ids=ids,
+        feature_columns=np.asarray(features, dtype=str),
     )
 
-    plot_selected_cells(nodes, args.out_dir / "selected_cells.png")
-    plot_knn_graph(nodes, edges, args.out_dir / "knn_graph.png")
-    write_summary(
-        args.out_dir,
-        adata=adata,
-        selected=selected,
-        nodes=nodes,
-        edges=edges,
-        feature_columns=feature_columns,
-        k_requested=args.k,
-    )
+    plot_cells(nodes, args.out_dir / "cells.png")
+    plot_graph(nodes, edges, args.out_dir / "knn_graph.png")
 
-    print(f"Saved representation to {args.out_dir}")
-    print(f"Selected cells: {nodes.shape[0]}")
-    print(f"Undirected edges: {edges.shape[0]}")
-    print(f"Node feature shape: {node_features.shape}")
-    print(f"Edge index shape: {edge_index.shape}")
+    write_summary(args.out_dir, adata, selected, nodes, edges, features, args.k)
+
+    print(f"saved: {args.out_dir}")
+    print(f"cells: {nodes.shape[0]}")
+    print(f"edges: {edges.shape[0]}")
+    print(f"islands: {nodes['island_id'].nunique()}")
 
 
 if __name__ == "__main__":
