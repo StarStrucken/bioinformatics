@@ -3,6 +3,8 @@ set -e
 
 target="${1:?usage: bash hpc_dump.sh all|dataset_id}"
 
+PARTITION="${PARTITION:-c23ms}"
+
 mkdir -p logs outputs
 
 if [[ "$target" == "all" ]]; then
@@ -24,9 +26,10 @@ for id in $ids; do
   rest=$((mins % 60))
   walltime=$(printf "%02d:%02d:00" "$hours" "$rest")
 
-  echo "submit $id cells=$cells time=$walltime"
+  echo "submit $id cells=$cells time=$walltime partition=$PARTITION"
 
   sbatch \
+    --partition="$PARTITION" \
     --job-name="xenum_${id}" \
     --time="$walltime" \
     --cpus-per-task=8 \
@@ -35,7 +38,7 @@ for id in $ids; do
     --wrap="
       set -e
       cd '$PWD'
-      . .venn/bin/activate 2>/dev/null || . .venv/bin/activate
+      . .venv/bin/activate
       python dump_xenum.py \
         --xenium-dir data/$id \
         --out-dir outputs/$id
