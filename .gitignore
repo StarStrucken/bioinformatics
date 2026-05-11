@@ -5,29 +5,33 @@ __pycache__/
 *.pyd
 *.so
 
-# Virtualenv
+# Env
 .venv/
 venv/
 env/
 
-# Packaging
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Build
 build/
 dist/
 *.egg-info/
 
-# Test/cache
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
-# Jupyter
-.ipynb_checkpoints/
-
 # Local data
 downloads/
+data/
+outputs/
+logs/
 *.part
+
+# HPC
+slurm-*.out
+*.sbatch.out
+*.sbatch.err
 
 # OS/editor
 .DS_Store
