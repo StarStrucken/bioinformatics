@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Env
+.venv/
+venv/
+env/
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Local data
+downloads/
+data/
+outputs/
+logs/
+*.part
+
+# HPC
+slurm-*.out
+*.sbatch.out
+*.sbatch.err
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
