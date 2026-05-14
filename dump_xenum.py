@@ -101,11 +101,28 @@ def load_xenium(xenium_dir: Path):
     }
     return adata
 
+def clean_float(x, default=0.0):
+    x = np.asarray(x, dtype=np.float32)
+    return np.nan_to_num(x, nan=default, posinf=default, neginf=default)
+
 def zscore(x):
     x = np.asarray(x, dtype=np.float32)
+
     if x.ndim == 1:
         x = x[:, None]
-    return (x - x.mean(axis=0)) / (x.std(axis=0) + 1e-6)
+
+    ok = np.isfinite(x)
+    counts = ok.sum(axis=0)
+
+    sums = np.where(ok, x, 0.0).sum(axis=0)
+    mean = sums / np.maximum(counts, 1)
+
+    x = np.where(ok, x, mean)
+
+    std = x.std(axis=0)
+    z = (x - mean) / (std + 1e-6)
+
+    return np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
 
 def knn_labels(coords: np.ndarray, k: int) -> np.ndarray:
     if coords.shape[0] < 2:
@@ -238,10 +255,15 @@ def select_cells(adata, max_cells: int, k: int):
 
 def per_cell_counts(x):
     total = np.asarray(x.sum(axis=1)).ravel().astype(np.float32)
+    total = np.nan_to_num(total, nan=0.0, posinf=0.0, neginf=0.0)
+
     detected = np.asarray(
         x.getnnz(axis=1) if sp.issparse(x) else (x > 0).sum(axis=1)
     ).ravel()
-    return total, detected.astype(np.int32)
+
+    detected = np.nan_to_num(detected, nan=0.0, posinf=0.0, neginf=0.0)
+
+    return total.astype(np.float32), detected.astype(np.int32)
 
 
 def make_nodes(adata) -> pd.DataFrame:
@@ -258,8 +280,16 @@ def make_nodes(adata) -> pd.DataFrame:
     island = adata.obs["island_id"].to_numpy(dtype=np.int32)
     island_size = pd.Series(island).map(pd.Series(island).value_counts()).to_numpy(dtype=np.int32)
 
-    cell_area = adata.obs["cell_area"].to_numpy(dtype=np.float32)
-    nucleus_area = adata.obs["nucleus_area"].to_numpy(dtype=np.float32)
+    cell_area = clean_float(adata.obs["cell_area"].to_numpy(dtype=np.float32))
+    nucleus_area = clean_float(adata.obs["nucleus_area"].to_numpy(dtype=np.float32))
+
+    nucleus_cell_ratio = np.divide(
+        nucleus_area,
+        cell_area,
+        out=np.zeros_like(nucleus_area, dtype=np.float32),
+        where=cell_area > 0,
+    )
+    nucleus_cell_ratio = clean_float(nucleus_cell_ratio)
 
     return pd.DataFrame(
         {
@@ -285,7 +315,7 @@ def make_nodes(adata) -> pd.DataFrame:
 
             "cell_area": cell_area,
             "nucleus_area": nucleus_area,
-            "nucleus_cell_ratio": nucleus_area / (cell_area + 1e-6),
+            "nucleus_cell_ratio": nucleus_cell_ratio,
         }
     )
 
@@ -582,6 +612,7 @@ def make_edges(
         return pd.DataFrame(columns=cols)
 
     embed = edge_embedding(blocks, measurement)
+    embed = np.nan_to_num(embed, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
 
     kk = min(k, n - 1)
     neighbor_distance, idx = (
@@ -937,6 +968,8 @@ def dump_one_graph(
     k: int,
     measurement: str,
 ):
+    print(f"start {measurement}", flush=True)
+
     edges = make_edges(nodes, blocks, k, measurement)
 
     graph_nodes = nodes_for_graph(nodes, edges)

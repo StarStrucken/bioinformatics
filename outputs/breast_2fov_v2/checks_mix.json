@@ -1,0 +1,23 @@
+{
+  "measurement": "mix",
+  "label": "mix:quick",
+  "n_nodes": 7275,
+  "n_edges": 14529,
+  "n_components": 44,
+  "largest_component": 7215,
+  "singletons": 36,
+  "neighbor_cutoff": 0.6764213442802429,
+  "candidate_directed_edges": 21825,
+  "kept_directed_edges": 21606,
+  "pruned_directed_edges": 219,
+  "duplicated_undirected_edges": 7077,
+  "bad_self_loops": 0,
+  "bad_node_index": 0,
+  "duplicated_edges_after_write": 0,
+  "same_component_mean": 1.0,
+  "same_spatial_island_mean": 1.0,
+  "distance_median": 42.42472457885742,
+  "distance_max": 197.85189819335938,
+  "neighbor_distance_median": 0.28099520021975427,
+  "neighbor_distance_max": 0.6763701458513524
+}

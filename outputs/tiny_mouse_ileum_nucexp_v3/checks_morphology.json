@@ -1,0 +1,23 @@
+{
+  "measurement": "morphology",
+  "label": "morphology:area",
+  "n_nodes": 23,
+  "n_edges": 43,
+  "n_components": 1,
+  "largest_component": 23,
+  "singletons": 0,
+  "neighbor_cutoff": 1.569771647453308,
+  "candidate_directed_edges": 69,
+  "kept_directed_edges": 67,
+  "pruned_directed_edges": 2,
+  "duplicated_undirected_edges": 24,
+  "bad_self_loops": 0,
+  "bad_node_index": 0,
+  "duplicated_edges_after_write": 0,
+  "same_component_mean": 1.0,
+  "same_spatial_island_mean": 0.4883720930232558,
+  "distance_median": 483.5616760253906,
+  "distance_max": 530.03271484375,
+  "neighbor_distance_median": 0.9261490504119213,
+  "neighbor_distance_max": 1.5054377860361956
+}

@@ -1,0 +1,23 @@
+{
+  "measurement": "profile",
+  "label": "rna:summary",
+  "n_nodes": 11898,
+  "n_edges": 28003,
+  "n_components": 1023,
+  "largest_component": 304,
+  "singletons": 28,
+  "neighbor_cutoff": 0.13461032292842864,
+  "candidate_directed_edges": 32130,
+  "kept_directed_edges": 31955,
+  "pruned_directed_edges": 175,
+  "duplicated_undirected_edges": 3952,
+  "bad_self_loops": 0,
+  "bad_node_index": 0,
+  "duplicated_edges_after_write": 0,
+  "same_component_mean": 1.0,
+  "same_spatial_island_mean": 0.9779666464307396,
+  "distance_median": 443.35479736328125,
+  "distance_max": 1372.02392578125,
+  "neighbor_distance_median": 0.0,
+  "neighbor_distance_max": 0.13419556617736816
+}

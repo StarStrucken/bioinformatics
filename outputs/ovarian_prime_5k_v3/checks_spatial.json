@@ -1,0 +1,23 @@
+{
+  "measurement": "spatial",
+  "label": "spatial:xy",
+  "n_nodes": 50000,
+  "n_edges": 88738,
+  "n_components": 78,
+  "largest_component": 49745,
+  "singletons": 43,
+  "neighbor_cutoff": 0.02865421772003174,
+  "candidate_directed_edges": 150000,
+  "kept_directed_edges": 149250,
+  "pruned_directed_edges": 750,
+  "duplicated_undirected_edges": 60512,
+  "bad_self_loops": 0,
+  "bad_node_index": 0,
+  "duplicated_edges_after_write": 0,
+  "same_component_mean": 1.0,
+  "same_spatial_island_mean": 1.0,
+  "distance_median": 8.460390090942383,
+  "distance_max": 17.596513748168945,
+  "neighbor_distance_median": 0.013915711031237793,
+  "neighbor_distance_max": 0.028654123189090476
+}

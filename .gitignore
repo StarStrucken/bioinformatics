@@ -24,7 +24,8 @@ dist/
 # Local data
 downloads/
 data/
-outputs/
+outputs/*/*.npz
+outputs/*/*.csv
 logs/
 *.part
 
