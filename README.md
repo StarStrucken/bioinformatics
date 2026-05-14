@@ -142,6 +142,8 @@ Evaluation & Interpretation
 ---
 # 📁 Repository Structure
 
+Proposed structure, not up to date.
+
 ```text
 ├── docs/              📖 Documentation
 ├── data/              🗂️ Raw + processed datasets
