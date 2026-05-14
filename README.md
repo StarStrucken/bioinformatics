@@ -103,18 +103,18 @@ Evaluation & Interpretation
 --- 
 # 🗂️ Datasets
 
-| Demo | Dataset ID | URL |
-|------|------------|-----|
-| 1 | tiny_human_kidney_protein_v4 | https://cf.10xgenomics.com/samples/xenium/4.0.0/Xenium_V1_Protein_Human_Kidney_tiny/Xenium_V1_Protein_Human_Kidney_tiny_outs.zip |
-| 1 | tiny_human_ovary_multimodal_v4 | https://cf.10xgenomics.com/samples/xenium/4.0.0/Xenium_V1_MultiCellSeg_Human_Ovary_tiny/Xenium_V1_MultiCellSeg_Human_Ovary_tiny_outs.zip |
-| 1 | tiny_human_ovary_nucexp_v4 | https://cf.10xgenomics.com/samples/xenium/4.0.0/Xenium_V1_Human_Ovary_tiny/Xenium_V1_Human_Ovary_tiny_outs.zip |
-| 1 | tiny_mouse_ileum_multimodal_v3 | https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_MultiCellSeg_Mouse_Ileum_tiny/Xenium_Prime_MultiCellSeg_Mouse_Ileum_tiny_outs.zip |
-| 1 | tiny_mouse_ileum_nucexp_v3 | https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_Mouse_Ileum_tiny/Xenium_Prime_Mouse_Ileum_tiny_outs.zip |
-| 1 | breast_2fov_v2 | https://cf.10xgenomics.com/samples/xenium/2.0.0/Xenium_V1_human_Breast_2fov/Xenium_V1_human_Breast_2fov_outs.zip |
-| 1 | lung_2fov_v2 | https://cf.10xgenomics.com/samples/xenium/2.0.0/Xenium_V1_human_Lung_2fov/Xenium_V1_human_Lung_2fov_outs.zip |
-| 1 | prostate_prime_5k_v3 | https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_Human_Prostate_FFPE/Xenium_Prime_Human_Prostate_FFPE_outs.zip |
-| 1 | ovarian_prime_5k_v3 | https://s3-us-west-2.amazonaws.com/10x.files/samples/xenium/3.0.0/Xenium_Prime_Ovarian_Cancer_FFPE_XRrun/Xenium_Prime_Ovarian_Cancer_FFPE_XRrun_outs.zip |
-| 1 | lymph_node_prime_5k_v3 | https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_Human_Lymph_Node_Reactive_FFPE/Xenium_Prime_Human_Lymph_Node_Reactive_FFPE_outs.zip |
+| Dataset | Cells | 10x version | Type | SHA256 |
+|---|---:|---:|---|---|
+| [tiny_human_kidney_protein_v4](https://cf.10xgenomics.com/samples/xenium/4.0.0/Xenium_V1_Protein_Human_Kidney_tiny/Xenium_V1_Protein_Human_Kidney_tiny_outs.zip) | 358 | 4.0.0 | tiny; protein | `abd7e8f7fd04…` |
+| [tiny_human_ovary_multimodal_v4](https://cf.10xgenomics.com/samples/xenium/4.0.0/Xenium_V1_MultiCellSeg_Human_Ovary_tiny/Xenium_V1_MultiCellSeg_Human_Ovary_tiny_outs.zip) | 623 | 4.0.0 | tiny; multimodal | `9b154a3c0836…` |
+| [tiny_human_ovary_nucexp_v4](https://cf.10xgenomics.com/samples/xenium/4.0.0/Xenium_V1_Human_Ovary_tiny/Xenium_V1_Human_Ovary_tiny_outs.zip) | 632 | 4.0.0 | tiny; nucleus expansion | `72b9a6d73ec4…` |
+| [tiny_mouse_ileum_multimodal_v3](https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_MultiCellSeg_Mouse_Ileum_tiny/Xenium_Prime_MultiCellSeg_Mouse_Ileum_tiny_outs.zip) | 36 | 3.0.0 | tiny; multimodal | `c4d028676e8b…` |
+| [tiny_mouse_ileum_nucexp_v3](https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_Mouse_Ileum_tiny/Xenium_Prime_Mouse_Ileum_tiny_outs.zip) | 23 | 3.0.0 | tiny; nucleus expansion | `72dc2353825f…` |
+| [breast_2fov_v2](https://cf.10xgenomics.com/samples/xenium/2.0.0/Xenium_V1_human_Breast_2fov/Xenium_V1_human_Breast_2fov_outs.zip) | 7,275 | 2.0.0 | 2 FOV; Xenium | `cc1e987b06aa…` |
+| [lung_2fov_v2](https://cf.10xgenomics.com/samples/xenium/2.0.0/Xenium_V1_human_Lung_2fov/Xenium_V1_human_Lung_2fov_outs.zip) | 11,898 | 2.0.0 | 2 FOV; Xenium | `acc353069871…` |
+| [prostate_prime_5k_v3](https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_Human_Prostate_FFPE/Xenium_Prime_Human_Prostate_FFPE_outs.zip) | 193,000 | 3.0.0 | large; Xenium Prime | `5eeee73d9f0c…` |
+| [ovarian_prime_5k_v3](https://s3-us-west-2.amazonaws.com/10x.files/samples/xenium/3.0.0/Xenium_Prime_Ovarian_Cancer_FFPE_XRrun/Xenium_Prime_Ovarian_Cancer_FFPE_XRrun_outs.zip) | 407,124 | 3.0.0 | large; Xenium Prime | `1ba372a8198c…` |
+| [lymph_node_prime_5k_v3](https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_Human_Lymph_Node_Reactive_FFPE/Xenium_Prime_Human_Lymph_Node_Reactive_FFPE_outs.zip) | 708,983 | 3.0.0 | large; Xenium Prime | `1931b2e45dbf…` |
 
 ---
 
