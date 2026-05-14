@@ -39,8 +39,6 @@ for id in $ids; do
       set -e
       cd '$PWD'
       . .venv/bin/activate
-      python dump_xenum.py \
-        --xenium-dir data/$id \
-        --out-dir outputs/$id
+      python dump_xenum.py "$id"
     "
 done
