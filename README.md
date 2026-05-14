@@ -103,10 +103,18 @@ Evaluation & Interpretation
 --- 
 # 🗂️ Datasets
 
-- Xenium spatial transcriptomics datasets 
-  - Human ovary
-  - Kidney protein atlas
-  - Mouse ileum multimodal tissue
+| Demo | Dataset ID | URL |
+|------|------------|-----|
+| 1 | tiny_human_kidney_protein_v4 | https://cf.10xgenomics.com/samples/xenium/4.0.0/Xenium_V1_Protein_Human_Kidney_tiny/Xenium_V1_Protein_Human_Kidney_tiny_outs.zip |
+| 1 | tiny_human_ovary_multimodal_v4 | https://cf.10xgenomics.com/samples/xenium/4.0.0/Xenium_V1_MultiCellSeg_Human_Ovary_tiny/Xenium_V1_MultiCellSeg_Human_Ovary_tiny_outs.zip |
+| 1 | tiny_human_ovary_nucexp_v4 | https://cf.10xgenomics.com/samples/xenium/4.0.0/Xenium_V1_Human_Ovary_tiny/Xenium_V1_Human_Ovary_tiny_outs.zip |
+| 1 | tiny_mouse_ileum_multimodal_v3 | https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_MultiCellSeg_Mouse_Ileum_tiny/Xenium_Prime_MultiCellSeg_Mouse_Ileum_tiny_outs.zip |
+| 1 | tiny_mouse_ileum_nucexp_v3 | https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_Mouse_Ileum_tiny/Xenium_Prime_Mouse_Ileum_tiny_outs.zip |
+| 1 | breast_2fov_v2 | https://cf.10xgenomics.com/samples/xenium/2.0.0/Xenium_V1_human_Breast_2fov/Xenium_V1_human_Breast_2fov_outs.zip |
+| 1 | lung_2fov_v2 | https://cf.10xgenomics.com/samples/xenium/2.0.0/Xenium_V1_human_Lung_2fov/Xenium_V1_human_Lung_2fov_outs.zip |
+| 1 | prostate_prime_5k_v3 | https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_Human_Prostate_FFPE/Xenium_Prime_Human_Prostate_FFPE_outs.zip |
+| 1 | ovarian_prime_5k_v3 | https://s3-us-west-2.amazonaws.com/10x.files/samples/xenium/3.0.0/Xenium_Prime_Ovarian_Cancer_FFPE_XRrun/Xenium_Prime_Ovarian_Cancer_FFPE_XRrun_outs.zip |
+| 1 | lymph_node_prime_5k_v3 | https://cf.10xgenomics.com/samples/xenium/3.0.0/Xenium_Prime_Human_Lymph_Node_Reactive_FFPE/Xenium_Prime_Human_Lymph_Node_Reactive_FFPE_outs.zip |
 
 ---
 
