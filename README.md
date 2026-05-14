@@ -1,329 +1,296 @@
-# Enhancing Spatial Transcriptomics with Morphometrics for Cellular Neighbor Prediction
 
-## Project Overview
+<p align="center">
+  <img src="https://costalab.org/wp-content/uploads/2020/12/cropped-logo-1.png" width="180"/>
+</p>
 
-This project investigates whether cellular neighborhood relationships can be predicted using:
+<h1 align="center">
+Predicting Cellular Neighborhoods in Spatial Transcriptomics via Morphometrics and Graph Learning
+</h1>
 
-- gene expression,
-- morphometric features,
-- or a combination of both.
+<p align="center">
+<b>Ivan · Yaroslav · Simay</b>
+</p>
 
-The problem is framed as a graph-based link prediction task where:
-- cells are nodes,
-- neighboring relationships are edges,
-- and biological features are used for prediction.
-
----
-
-# Research Question
-
-## Main Question
-
-Can cellular neighborhood relationships be predicted from gene expression and/or morphometric features?
+<p align="center">
+Spatial Transcriptomics • Morphometrics • Graph Learning • Link Prediction
+</p>
 
 ---
 
-## Subquestions
+---
 
-- Does morphology improve prediction accuracy?
-- Which modality contributes more strongly?
-- Are transcriptomic and morphometric features complementary?
-- Can graph-based methods outperform classical nearest-neighbor methods?
-- Can graph attention reveal biologically meaningful interactions?
+# 📚 Table of Contents
+
+- [Abstract](#-abstract)
+- [Key Idea](#-key-idea)
+- [Pipeline Overview](#-pipeline-overview)
+- [Models](#-models)
+- [Datasets](#-datasets)
+- [Research Questions](#-research-questions)
+- [Evaluation Metrics](#-evaluation-metrics)
+- [Repository Structure](#-repository-structure)
+- [Current Status](#-current-status)
+- [Timeline](#-timeline)
+- [Contributions](#-key-contributions-expected)
+- [Future Work](#-future-work)
+- [Paper](#-paper)
+- [Citations](#-citations)
+- [External References](#-external-references)
+- [Contact](#-contact)
+- [Acknowledgements](#-acknowledgements)
 
 ---
 
-# Repository Structure
+---
 
-```text
-project-root/
-├── docs/
-├── data/
-├── notebooks/
-├── scripts/
-├── results/
-├── models/
-└── references/
+# 📖 Abstract
+
+Understanding cellular organization in tissue is a fundamental problem in computational biology.  
+We investigate whether **cellular neighborhood relationships can be predicted from gene expression and morphometric features** using classical and graph-based learning methods.
+
+We formulate this as a **graph link prediction problem**, comparing:
+
+- kNN baselines 🔍  
+- weighted kNN ⚖️  
+- morphology-enhanced models 🧬  
+- graph neural networks (GCN, GAT) 🧠  
+
+---
+
+--- 
+# 💡 Key Idea
+
+> Can we reconstruct cellular neighborhoods using only molecular + morphological signatures?
+
+---
+
+--- 
+# 🔬 Pipeline Overview
+
+```
+Raw Spatial Transcriptomics Data
+            ↓
+Preprocessing & QC 
+            ↓
+Feature Extraction 
+            ↓
+Graph Construction 
+            ↓
+Link Prediction Models 
+            ↓
+Evaluation & Interpretation 
 ```
 
 ---
 
-# Literature Review
+---
+# 🧪 Models
 
-## Spatial Transcriptomics
+## Baselines
+- k-Nearest Neighbors (kNN)
+- Weighted kNN 
 
-### Summary
-Spatial transcriptomics preserves spatial tissue organization while measuring gene expression.
+## Morphology Models
+- Morphology-only kNN
+- Combined feature kNN
 
-### Important Concepts
-- tissue architecture
-- cellular neighborhoods
-- spatial embeddings
-- spatial graphs
-
-### Relevant Technologies
-- Visium
-- MERFISH
-- Slide-seq
-- seqFISH
-
-### Notes
-- Add findings from reviewed papers here.
+## Graph Models
+- Graph Convolutional Network (GCN)
+- Graph Attention Network (GAT)
 
 ---
 
-## Morphometrics
+--- 
+# 🗂️ Datasets
 
-### Summary
-Morphometrics studies quantitative cellular shape and structural properties.
-
-### Candidate Features
-- area
-- perimeter
-- eccentricity
-- compactness
-- texture
-- density
-
-### Notes
-- Add observations and useful methods here.
+- Xenium spatial transcriptomics datasets 
+  - Human ovary
+  - Kidney protein atlas
+  - Mouse ileum multimodal tissue
 
 ---
 
-## Graph Learning
+---
+# ❓ Research Questions
 
-### Summary
-Graph learning models biological systems as relational structures.
-
-### Relevant Methods
-- kNN
-- weighted kNN
-- Graph Convolutional Networks (GCN)
-- Graph Attention Networks (GAT)
-- link prediction
-
-### Notes
-- Add graph-learning related literature here.
+- Does morphology improve neighbor prediction? 
+- Can gene expression alone reconstruct spatial structure? 
+- Do attention weights reflect biology? 
+- Which modality is most informative? 
 
 ---
 
-# Paper Review Template
+---
+# 📏 Evaluation Metrics
 
-## Paper Title
-
-### Citation
-Authors, year, journal/conference.
-
-### Main Idea
-Short summary of the paper.
-
-### Methodology
-Describe the computational approach used.
-
-### Dataset
-What biological dataset was used?
-
-### Strengths
-- 
-- 
-- 
-
-### Weaknesses
-- 
-- 
-- 
-
-### Relevance to Project
-Why is this paper useful for our work?
-
-### Ideas to Reuse
-- 
-- 
-- 
+- Accuracy 
+- Precision / Recall  
+- F1-score  
+- ROC-AUC  
+- Runtime  
 
 ---
 
-# Proposed Methodology
+---
+# 📁 Repository Structure
 
-## Data Collection
-
-### Datasets
-| Dataset | Status | Notes |
-|---|---|---|
-|  |  |  |
+```text
+├── docs/              📖 Documentation
+├── data/              🗂️ Raw + processed datasets
+├── src/               ⚙️ Core pipeline
+│   ├── models/
+│   ├── features/
+│   ├── preprocessing/
+│   └── evaluation/
+├── experiments/       🧪 Reproducible runs
+├── results/           📊 Figures + tables
+├── notebooks/         📓 Exploration
+├── paper/             📄 Final paper
+└── presentation/      🎤 Slides
+```
 
 ---
 
-## Preprocessing
+---
+# 📊 Current Status
 
-- [ ] Normalize gene expression
-- [ ] Clean metadata
-- [ ] Construct spatial graphs
-- [ ] Extract morphology features
-- [ ] Generate train/test splits
+## ✅ Completed
+- Project definition
+- Dataset exploration
+- Literature review setup
+
+## 🟡 In Progress
+- Baseline kNN implementation
+- HPC setup
+- Morphology feature extraction
+
+## 🔵 Planned
+- GCN / GAT experiments
+- Ablation studies
+- Biological interpretation
 
 ---
 
-## Feature Engineering
+---
+# ⏳ Timeline
 
-### Transcriptomic Features
-- PCA embeddings
-- marker genes
-- normalized counts
-
-### Morphometric Features
-- shape descriptors
-- density features
-- texture metrics
-- graph topology
+| Phase | Date | Goal |
+|------|------|------|
+| Setup | May 2026 | Data + baselines |
+| Development | May–June 2026 | Models + experiments |
+| Finalization | June 2026 | Analysis + paper |
+| Presentation | July 6, 2026 | Defense |
 
 ---
 
-# Models
+---
+# 🏆 Key Contributions (Expected)
 
-## Baseline Models
-
-- [ ] vanilla kNN
-- [ ] weighted kNN
-- [ ] morphology-only baseline
-- [ ] transcriptomics-only baseline
+- Comparative analysis of transcriptomics vs morphology 
+- Graph-based framework for spatial biology 
+- Benchmark of classical vs neural models 
+- Biological interpretation of spatial structure 
 
 ---
 
-## Advanced Models
-
-- [ ] GCN
-- [ ] GAT
-- [ ] multimodal graph learning
-
 ---
+# 🚀 Future Work
 
-# Experimental Design
-
-## Benchmark Table
-
-| Model | Features | Accuracy | F1 | Notes |
-|---|---|---|---|---|
-| Baseline kNN | Expression |  |  |  |
-
----
-
-## Evaluation Metrics
-
-- Accuracy
-- Precision
-- Recall
-- F1-score
-- ROC-AUC
-- Runtime
-- Memory usage
-
----
-
-# Results
-
-## Current Findings
-
-### Observations
-- 
-
-### Failed Approaches
-- 
-
-### Successful Approaches
 - 
 
 ---
 
-# Biological Interpretation
+---
+# 📄 Paper
 
-## Key Questions
-
-- Which cells cluster together?
-- Does morphology correlate with spatial proximity?
-- Are graph attention weights biologically meaningful?
+📌 **Working Paper (Draft / Coming Soon)**  
+> 
 
 ---
 
-# Current Tasks
+---
+# 📚 Citations
 
-## High Priority
+## Spatial Transcriptomics & Morphometrics
 
-- [ ] Download datasets
-- [ ] Run dump-scripts
-- [ ] Reproduce baseline
-- [ ] Implement weighted kNN
+- Chelebian, E., Avenel, C., & Wählby, C. (2025). *Combining spatial transcriptomics with tissue morphology*. Nature Communications, 16(1), 4452.  
+  https://doi.org/10.1038/s41467-025-58989-8
+
+- Hallou, A., He, R., Simons, B. D., & Dumitrascu, B. (2025). *A computational pipeline for spatial mechano-transcriptomics*. Nature Methods, 22(4), 737–750.  
+  https://doi.org/10.1038/s41592-025-02618-1
 
 ---
 
-## Medium Priority
+## Graph Neural Networks & Link Prediction
 
-- [ ] Add morphology features
-- [ ] Build graph pipelines
-- [ ] Benchmark models
+- Chen, G., & Liu, Z.-P. (2022). *Graph attention network for link prediction of gene regulations from single-cell RNA-sequencing data*. Bioinformatics, 38(19), 4522–4529.  
+  https://doi.org/10.1093/bioinformatics/btac559
 
----
+- Zhang, K., Wang, C., Sun, L., & Zheng, J. (2022). *Prediction of gene co-expression from chromatin contacts with graph attention network*. Bioinformatics, 38(19), 4457–4465.  
+  https://doi.org/10.1093/bioinformatics/btac535
 
-## Long-Term Goals
+- Yu, W., Lin, Z., Lan, M., & Ou-Yang, L. (2025). *GCLink: A graph contrastive link prediction framework for gene regulatory network inference*. Bioinformatics, 41(3).  
+  https://doi.org/10.1093/bioinformatics/btaf074
 
-- [ ] GAT implementation
-- [ ] Ablation studies
-- [ ] Explainability analysis
-- [ ] Final presentation
-
----
-
-# Timeline
-
-## 4.5 – 29.6
-Project development
-
-### Goals
-- dataset setup
-- baseline implementation
-- morphology integration
-- benchmarking
-- graph learning experiments
+- Narganes-Carlon, D., Myatt, A., Mudaliar, M., & Crowther, D. J. (2024). *GATher: Graph Attention Based Predictions of Gene-Disease Links*. arXiv:2409.16327  
+  https://doi.org/10.48550/arXiv.2409.16327
 
 ---
 
-## 6.7
-Project Presentation
+## Biological Graph Learning & Generative Models
 
-### Deliverables
-- presentation slides
-- GitHub/GitLab repository
-- experimental results
-- benchmarking analysis
+- Yu, T., Ekbote, C., Morozov, N., et al. (2025). *Tissue Reassembly with Generative AI*. Bioinformatics.  
+  https://doi.org/10.1101/2025.02.13.638045
 
----
-
-# Discussion and Future Work
-
-## Potential Future Directions
-
-- multimodal transformers
-- contrastive learning
-- explainable graph attention
-- tissue reconstruction
-- scalable graph learning
+- Gjoni, K., Gunsalus, L. M., Kuang, S., et al. (2025). *Comparing chromatin contact maps at scale: Methods and insights*. Nature Methods, 22(4), 824–833.  
+  https://doi.org/10.1038/s41592-025-02630-5
 
 ---
 
-# References
+## Graph-Based Biological Applications
 
-## Papers
+- Aamer, N., Asim, M. N., Vollmer, S., & Dengel, A. (n.d.). *An Explainable Knowledge Graph-Driven Approach to Decipher the Link Between Brain Disorders and the Gut Microbiome*.
 
-- Add references here
+- Dip, S. A., & Zhang, L. (n.d.). *Predicting Unseen Gene Perturbation Response Using Graph Neural Networks with Biological Priors*.
+
+- Yuan, X. (n.d.). *Graph neural networks for spatial gene expression analysis of the developing human heart*.
 
 ---
 
-# Notes
+## Tools for Cellular Analysis
 
-## Meeting Notes
+- Stirling, D. R., Swain-Bowden, M. J., Lucas, A. M., et al. (2021). *CellProfiler 4: Improvements in speed, utility and usability*. BMC Bioinformatics, 22(1), 433.  
+  https://doi.org/10.1186/s12859-021-04344-9
 
-### Date
+---
 
-### Discussion
+---
 
-### Action Items
+# 🌐 External References
+
+- Spatial Transcriptomics Overview  
+  https://www.nature.com/articles/s41592-021-01109-1
+
+- Graph Neural Networks Survey  
+  https://arxiv.org/abs/1812.08434
+
+- Morphometrics in Biology  
+  https://doi.org/10.1038/nmeth.2930
+
+- Xenium Platform (10x Genomics)  
+  https://www.10xgenomics.com/products/xenium-in-situ
+
+---
+
+---
+# 📬 Contact
+
+---
+
+---
+# 🤝 Acknowledgements
+
+- Spatial transcriptomics datasets (10x Genomics Xenium 🧬)
+- Costa Lab
+- HPC infrastructure support
+- Project supervisors and collaborators
