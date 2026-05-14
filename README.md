@@ -1,292 +1,210 @@
 # Enhancing Spatial Transcriptomics with Morphometrics for Cellular Neighbor Prediction
 
----
+## Project Overview
 
-# 1. Introduction
+This project investigates whether cellular neighborhood relationships can be predicted using:
 
-## Problem Statement
-
-Can we predict cellular neighborhood relationships using:
 - gene expression,
 - morphometric features,
-- or both combined?
+- or a combination of both.
+
+The problem is framed as a graph-based link prediction task where:
+- cells are nodes,
+- neighboring relationships are edges,
+- and biological features are used for prediction.
 
 ---
 
-## Motivation
+# Research Question
 
-Why is this biologically/computationally important?
+## Main Question
 
-- 
-- 
-- 
+Can cellular neighborhood relationships be predicted from gene expression and/or morphometric features?
 
 ---
 
-## Objectives
+## Subquestions
 
-- [ ] Predict cell neighbors
-- [ ] Compare transcriptomics vs morphology
-- [ ] Benchmark classical and graph methods
-- [ ] Analyze biological interpretability
+- Does morphology improve prediction accuracy?
+- Which modality contributes more strongly?
+- Are transcriptomic and morphometric features complementary?
+- Can graph-based methods outperform classical nearest-neighbor methods?
+- Can graph attention reveal biologically meaningful interactions?
 
 ---
 
-# 2. Background
+# Repository Structure
+
+```text
+project-root/
+├── docs/
+├── data/
+├── notebooks/
+├── scripts/
+├── results/
+├── models/
+└── references/
+```
+
+---
+
+# Literature Review
 
 ## Spatial Transcriptomics
 
-### Key Concepts
-- 
-- 
-- 
+### Summary
+Spatial transcriptomics preserves spatial tissue organization while measuring gene expression.
 
-### Challenges
-- 
-- 
-- 
+### Important Concepts
+- tissue architecture
+- cellular neighborhoods
+- spatial embeddings
+- spatial graphs
+
+### Relevant Technologies
+- Visium
+- MERFISH
+- Slide-seq
+- seqFISH
+
+### Notes
+- Add findings from reviewed papers here.
 
 ---
 
 ## Morphometrics
 
-### Key Concepts
-- 
-- 
-- 
+### Summary
+Morphometrics studies quantitative cellular shape and structural properties.
 
 ### Candidate Features
-- 
-- 
-- 
+- area
+- perimeter
+- eccentricity
+- compactness
+- texture
+- density
+
+### Notes
+- Add observations and useful methods here.
 
 ---
 
 ## Graph Learning
 
-### Key Concepts
-- 
-- 
-- 
+### Summary
+Graph learning models biological systems as relational structures.
 
 ### Relevant Methods
 - kNN
 - weighted kNN
-- GCN
-- GAT
+- Graph Convolutional Networks (GCN)
+- Graph Attention Networks (GAT)
 - link prediction
 
----
-
-# 3. Literature Review
-
-## Spatial Transcriptomics Papers
-
-### Paper
-
-#### Citation
-
-#### Main Contribution
-
-#### Relevance
-
-#### Notes
+### Notes
+- Add graph-learning related literature here.
 
 ---
 
-## Morphometrics Papers
+# Paper Review Template
 
-### Paper
+## Paper Title
 
-#### Citation
+### Citation
+Authors, year, journal/conference.
 
-#### Main Contribution
+### Main Idea
+Short summary of the paper.
 
-#### Relevance
+### Methodology
+Describe the computational approach used.
 
-#### Notes
+### Dataset
+What biological dataset was used?
 
----
+### Strengths
+- 
+- 
+- 
 
-## Graph Learning Papers
+### Weaknesses
+- 
+- 
+- 
 
-### Paper
+### Relevance to Project
+Why is this paper useful for our work?
 
-#### Citation
-
-#### Main Contribution
-
-#### Relevance
-
-#### Notes
-
----
-
-# 4. Dataset and Data Processing
-
-## Datasets
-
-| Dataset | Description | Status | Notes |
-|---|---|---|---|
-|  |  |  |  |
+### Ideas to Reuse
+- 
+- 
+- 
 
 ---
 
-## Preprocessing Pipeline
+# Proposed Methodology
 
-- [ ] Download datasets
+## Data Collection
+
+### Datasets
+| Dataset | Status | Notes |
+|---|---|---|
+|  |  |  |
+
+---
+
+## Preprocessing
+
+- [ ] Normalize gene expression
 - [ ] Clean metadata
-- [ ] Normalize expression
-- [ ] Extract morphology
-- [ ] Build spatial graphs
+- [ ] Construct spatial graphs
+- [ ] Extract morphology features
 - [ ] Generate train/test splits
 
 ---
 
-## Spatial Graph Construction
+## Feature Engineering
 
-### Graph Definition
-- radius graph
-- k-nearest spatial graph
-- Delaunay triangulation
+### Transcriptomic Features
+- PCA embeddings
+- marker genes
+- normalized counts
 
-### Notes
-- 
-- 
-- 
-
----
-
-# 5. Feature Engineering
-
-## Transcriptomic Features
-
-### Methods
-- PCA
-- highly variable genes
-- embeddings
-
-### Notes
-- 
-- 
-- 
+### Morphometric Features
+- shape descriptors
+- density features
+- texture metrics
+- graph topology
 
 ---
 
-## Morphometric Features
-
-### Features
-- area
-- perimeter
-- eccentricity
-- texture
-- density
-
-### Notes
-- 
-- 
-- 
-
----
-
-## Combined Features
-
-### Fusion Strategy
-- concatenation
-- weighted fusion
-- learned embeddings
-
-### Notes
-- 
-- 
-- 
-
----
-
-# 6. Models
+# Models
 
 ## Baseline Models
 
-### Vanilla kNN
-
-#### Description
-
-#### Results
-
----
-
-### Weighted kNN
-
-#### Weighting Methods
-- 1/d
-- 1/d²
-- Gaussian weighting
-
-#### Results
+- [ ] vanilla kNN
+- [ ] weighted kNN
+- [ ] morphology-only baseline
+- [ ] transcriptomics-only baseline
 
 ---
 
-## Graph Models
+## Advanced Models
 
-### GCN
-
-#### Architecture
-
-#### Results
+- [ ] GCN
+- [ ] GAT
+- [ ] multimodal graph learning
 
 ---
 
-### GAT
+# Experimental Design
 
-#### Architecture
+## Benchmark Table
 
-#### Attention Interpretation
-
-#### Results
-
----
-
-# 7. Link Prediction
-
-## Problem Formulation
-
-### Nodes
-cells
-
-### Edges
-neighbor relationships
-
-### Prediction Task
-predict whether two cells should share an edge
-
----
-
-## Negative Sampling
-
-### Strategy
-- 
-- 
-- 
-
----
-
-# 8. Experimental Design
-
-## Benchmarking
-
-| Model | Features | Accuracy | F1 | ROC-AUC | Notes |
-|---|---|---|---|---|---|
-|  |  |  |  |  |  |
-
----
-
-## Ablation Studies
-
-- [ ] transcriptomics only
-- [ ] morphology only
-- [ ] combined features
-- [ ] without attention
-- [ ] different graph construction methods
+| Model | Features | Accuracy | F1 | Notes |
+|---|---|---|---|---|
+| Baseline kNN | Expression |  |  |  |
 
 ---
 
@@ -298,142 +216,114 @@ predict whether two cells should share an edge
 - F1-score
 - ROC-AUC
 - Runtime
+- Memory usage
 
 ---
 
-# 9. Biological Interpretation
+# Results
 
-## Questions
+## Current Findings
 
-- Which cells are easiest to predict?
-- Does morphology improve neighborhood prediction?
-- Are attention weights biologically meaningful?
-- Which features contribute most strongly?
-
----
-
-## Visualization Ideas
-
-- spatial graphs
-- predicted neighbors
-- attention maps
-- embedding visualizations
-
----
-
-# 10. Current Results
-
-## Working Approaches
-
+### Observations
 - 
+
+### Failed Approaches
 - 
+
+### Successful Approaches
 - 
 
 ---
 
-## Failed Approaches
+# Biological Interpretation
 
-- 
-- 
-- 
+## Key Questions
 
----
-
-## Observations
-
-- 
-- 
-- 
+- Which cells cluster together?
+- Does morphology correlate with spatial proximity?
+- Are graph attention weights biologically meaningful?
 
 ---
 
-# 11. Discussion
+# Current Tasks
 
-## Challenges
+## High Priority
 
-- noisy data
-- sparse expression
-- graph sensitivity
-- feature imbalance
-
----
-
-## Limitations
-
-- 
-- 
-- 
-
----
-
-# 12. Future Work
-
-- multimodal transformers
-- explainable graph learning
-- contrastive learning
-- larger spatial datasets
-
----
-
-# 13. Task Tracking
-
-## Current Tasks
-
-- [ ] Set up repository
 - [ ] Download datasets
 - [ ] Run dump-scripts
 - [ ] Reproduce baseline
 - [ ] Implement weighted kNN
+
+---
+
+## Medium Priority
+
 - [ ] Add morphology features
+- [ ] Build graph pipelines
 - [ ] Benchmark models
-- [ ] Prepare presentation
 
 ---
 
-# 14. Timeline
+## Long-Term Goals
 
-| Date | Milestone | Status |
-|---|---|---|
-| 4.5 | Project Start | Complete |
-| 29.6 | Development Complete | Pending |
-| 6.7 | Final Presentation | Pending |
-
----
-
-# 15. Presentation Structure
-
-## Sections
-
-- Introduction
-- Biological Motivation
-- Methodology
-- Model Design
-- Benchmarking
-- Results
-- Biological Interpretation
-- Discussion
-- Future Work
+- [ ] GAT implementation
+- [ ] Ablation studies
+- [ ] Explainability analysis
+- [ ] Final presentation
 
 ---
 
-# 16. References
+# Timeline
+
+## 4.5 – 29.6
+Project development
+
+### Goals
+- dataset setup
+- baseline implementation
+- morphology integration
+- benchmarking
+- graph learning experiments
+
+---
+
+## 6.7
+Project Presentation
+
+### Deliverables
+- presentation slides
+- GitHub/GitLab repository
+- experimental results
+- benchmarking analysis
+
+---
+
+# Discussion and Future Work
+
+## Potential Future Directions
+
+- multimodal transformers
+- contrastive learning
+- explainable graph attention
+- tissue reconstruction
+- scalable graph learning
+
+---
+
+# References
 
 ## Papers
 
-- 
+- Add references here
 
 ---
 
-# 17. Meeting Notes
+# Notes
 
-## Date
+## Meeting Notes
+
+### Date
 
 ### Discussion
 
-### Decisions
-
 ### Action Items
-
-- 
-- 
-- 
