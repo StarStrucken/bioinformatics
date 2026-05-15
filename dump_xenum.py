@@ -1073,12 +1073,35 @@ def representation(nodes: pd.DataFrame, edges: pd.DataFrame):
 
     edge_index = undirected.to_numpy(dtype=np.int64).T
 
-    attr = edges[edge_features].to_numpy(dtype=np.float32)
+    attr_df = edges[edge_features].copy()
+    reverse_attr_df = attr_df.copy()
+
+    for col in ("dx", "dy", "direction_x", "direction_y"):
+        if col in reverse_attr_df.columns:
+            reverse_attr_df[col] = -reverse_attr_df[col]
+
+    if {"dx", "dy", "angle"}.issubset(reverse_attr_df.columns):
+        reverse_attr_df["angle"] = np.arctan2(
+            reverse_attr_df["dy"].to_numpy(dtype=np.float32),
+            reverse_attr_df["dx"].to_numpy(dtype=np.float32),
+        )
+
+    for source_col, target_col in (
+        ("source_component_id", "target_component_id"),
+        ("source_component_size", "target_component_size"),
+    ):
+        if source_col in reverse_attr_df.columns and target_col in reverse_attr_df.columns:
+            reverse_attr_df[[source_col, target_col]] = reverse_attr_df[
+                [target_col, source_col]
+            ].to_numpy()
+
+    attr = attr_df.to_numpy(dtype=np.float32)
+    reverse_attr = reverse_attr_df.to_numpy(dtype=np.float32)
 
     edge_attr = np.vstack(
         [
             attr,
-            attr,
+            reverse_attr,
         ]
     )
 
