@@ -8,6 +8,8 @@
   "singletons": 8,
   "neighbor_cutoff": 0.2497542637720704,
   "candidate_directed_edges": 1848,
+  "raw_candidate_directed_edges": 1869,
+  "self_loop_candidates": 21,
   "kept_directed_edges": 1794,
   "pruned_directed_edges": 54,
   "duplicated_undirected_edges": 637,

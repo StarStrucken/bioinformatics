@@ -39,6 +39,6 @@ for id in $ids; do
       set -e
       cd '$PWD'
       . .venv/bin/activate
-      python dump_xenum.py "$id"
+      python dump_xenum.py "$id" --align-exact
     "
 done

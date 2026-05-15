@@ -11,6 +11,8 @@
     "spatial",
     "profile",
     "morphology",
+    "align",
+    "mix_nonspatial",
     "mix"
   ],
   "edge_measurements": {
@@ -19,7 +21,8 @@
       "weights": {
         "spatial": 1.0,
         "profile": 0.0,
-        "morphology": 0.0
+        "morphology": 0.0,
+        "align": 0.0
       },
       "cutoff_quantile": 0.995,
       "cutoff_mad": 8.0
@@ -29,7 +32,8 @@
       "weights": {
         "spatial": 0.0,
         "profile": 1.0,
-        "morphology": 0.0
+        "morphology": 0.0,
+        "align": 0.0
       },
       "cutoff_quantile": 0.98,
       "cutoff_mad": 6.0
@@ -39,20 +43,54 @@
       "weights": {
         "spatial": 0.0,
         "profile": 0.0,
-        "morphology": 1.0
+        "morphology": 1.0,
+        "align": 0.0
       },
       "cutoff_quantile": 0.98,
       "cutoff_mad": 6.0
     },
+    "align": {
+      "label": "align:top_genes",
+      "weights": {
+        "spatial": 0.0,
+        "profile": 0.0,
+        "morphology": 0.0,
+        "align": 1.0
+      },
+      "cutoff_quantile": 0.98,
+      "cutoff_mad": 6.0,
+      "seq_len": 15,
+      "candidate_k": 80,
+      "exact_pairwise": false,
+      "insert_cost": 1.0,
+      "delete_cost": 1.0,
+      "substitute_cost": 2.0
+    },
+    "mix_nonspatial": {
+      "label": "mix:nonspatial",
+      "weights": {
+        "spatial": 0.0,
+        "profile": 0.35,
+        "morphology": 0.5,
+        "align": 0.75
+      },
+      "cutoff_quantile": 0.99,
+      "cutoff_mad": 8.0,
+      "candidate_k": 80,
+      "exact_pairwise": false
+    },
     "mix": {
-      "label": "mix:quick",
+      "label": "mix:full+spatial",
       "weights": {
         "spatial": 1.0,
         "profile": 0.35,
-        "morphology": 0.5
+        "morphology": 0.5,
+        "align": 0.75
       },
       "cutoff_quantile": 0.99,
-      "cutoff_mad": 8.0
+      "cutoff_mad": 8.0,
+      "candidate_k": 80,
+      "exact_pairwise": false
     }
   },
   "edge_summaries": {
@@ -65,7 +103,8 @@
       "weights": {
         "spatial": 1.0,
         "profile": 0.0,
-        "morphology": 0.0
+        "morphology": 0.0,
+        "align": 0.0
       },
       "neighbor_cutoff": 0.08512657135725021,
       "raw_candidate_directed_edges": 1869,
@@ -84,6 +123,8 @@
         "singletons": 0,
         "neighbor_cutoff": 0.08512657135725021,
         "candidate_directed_edges": 1869,
+        "raw_candidate_directed_edges": 1869,
+        "self_loop_candidates": 0,
         "kept_directed_edges": 1859,
         "pruned_directed_edges": 10,
         "duplicated_undirected_edges": 754,
@@ -111,7 +152,8 @@
       "weights": {
         "spatial": 0.0,
         "profile": 1.0,
-        "morphology": 0.0
+        "morphology": 0.0,
+        "align": 0.0
       },
       "neighbor_cutoff": 0.2497542637720704,
       "raw_candidate_directed_edges": 1869,
@@ -130,6 +172,8 @@
         "singletons": 8,
         "neighbor_cutoff": 0.2497542637720704,
         "candidate_directed_edges": 1848,
+        "raw_candidate_directed_edges": 1869,
+        "self_loop_candidates": 21,
         "kept_directed_edges": 1794,
         "pruned_directed_edges": 54,
         "duplicated_undirected_edges": 637,
@@ -157,7 +201,8 @@
       "weights": {
         "spatial": 0.0,
         "profile": 0.0,
-        "morphology": 1.0
+        "morphology": 1.0,
+        "align": 0.0
       },
       "neighbor_cutoff": 0.5866561318188905,
       "raw_candidate_directed_edges": 1869,
@@ -176,6 +221,8 @@
         "singletons": 5,
         "neighbor_cutoff": 0.5866561318188905,
         "candidate_directed_edges": 1869,
+        "raw_candidate_directed_edges": 1869,
+        "self_loop_candidates": 0,
         "kept_directed_edges": 1829,
         "pruned_directed_edges": 40,
         "duplicated_undirected_edges": 677,
@@ -194,46 +241,147 @@
       "checks_json": "checks_morphology.json",
       "representation_npz": "representation_morphology.npz"
     },
-    "mix": {
-      "label": "mix:quick",
-      "n_edges": 1271,
-      "n_components": 5,
-      "largest_component": 291,
+    "align": {
+      "label": "align:top_genes",
+      "n_edges": 1507,
+      "n_components": 2,
+      "largest_component": 622,
+      "singletons": 1,
+      "weights": {
+        "spatial": 0.0,
+        "profile": 0.0,
+        "morphology": 0.0,
+        "align": 1.0
+      },
+      "neighbor_cutoff": 1.4666666984558105,
+      "raw_candidate_directed_edges": 1869,
+      "candidate_directed_edges": 1869,
+      "kept_directed_edges": 1863,
+      "pruned_directed_edges": 6,
+      "self_loop_candidates": 0,
+      "duplicated_undirected_edges": 356,
+      "checks": {
+        "measurement": "align",
+        "label": "align:top_genes",
+        "n_nodes": 623,
+        "n_edges": 1507,
+        "n_components": 2,
+        "largest_component": 622,
+        "singletons": 1,
+        "neighbor_cutoff": 1.4666666984558105,
+        "candidate_directed_edges": 1869,
+        "raw_candidate_directed_edges": 1869,
+        "self_loop_candidates": 0,
+        "kept_directed_edges": 1863,
+        "pruned_directed_edges": 6,
+        "duplicated_undirected_edges": 356,
+        "bad_self_loops": 0,
+        "bad_node_index": 0,
+        "duplicated_edges_after_write": 0,
+        "same_component_mean": 1.0,
+        "same_spatial_island_mean": 0.5122760451227605,
+        "distance_median": 135.54193115234375,
+        "distance_max": 729.4187622070312,
+        "neighbor_distance_median": 1.2000000476837158,
+        "neighbor_distance_max": 1.4666666984558105
+      },
+      "node_csv": "nodes_align.csv",
+      "edge_csv": "edges_align.csv",
+      "checks_json": "checks_align.json",
+      "representation_npz": "representation_align.npz"
+    },
+    "mix_nonspatial": {
+      "label": "mix:nonspatial",
+      "n_edges": 1380,
+      "n_components": 3,
+      "largest_component": 621,
       "singletons": 2,
       "weights": {
-        "spatial": 1.0,
+        "spatial": 0.0,
         "profile": 0.35,
-        "morphology": 0.5
+        "morphology": 0.5,
+        "align": 0.75
       },
-      "neighbor_cutoff": 0.8676546812057495,
+      "neighbor_cutoff": 1.2905220985412598,
       "raw_candidate_directed_edges": 1869,
       "candidate_directed_edges": 1869,
       "kept_directed_edges": 1850,
       "pruned_directed_edges": 19,
       "self_loop_candidates": 0,
-      "duplicated_undirected_edges": 579,
+      "duplicated_undirected_edges": 470,
       "checks": {
-        "measurement": "mix",
-        "label": "mix:quick",
+        "measurement": "mix_nonspatial",
+        "label": "mix:nonspatial",
         "n_nodes": 623,
-        "n_edges": 1271,
-        "n_components": 5,
-        "largest_component": 291,
+        "n_edges": 1380,
+        "n_components": 3,
+        "largest_component": 621,
         "singletons": 2,
-        "neighbor_cutoff": 0.8676546812057495,
+        "neighbor_cutoff": 1.2905220985412598,
         "candidate_directed_edges": 1869,
+        "raw_candidate_directed_edges": 1869,
+        "self_loop_candidates": 0,
         "kept_directed_edges": 1850,
         "pruned_directed_edges": 19,
-        "duplicated_undirected_edges": 579,
+        "duplicated_undirected_edges": 470,
+        "bad_self_loops": 0,
+        "bad_node_index": 0,
+        "duplicated_edges_after_write": 0,
+        "same_component_mean": 1.0,
+        "same_spatial_island_mean": 0.5442028985507247,
+        "distance_median": 115.05535888671875,
+        "distance_max": 729.8595581054688,
+        "neighbor_distance_median": 0.9705191850662231,
+        "neighbor_distance_max": 1.289090871810913
+      },
+      "node_csv": "nodes_mix_nonspatial.csv",
+      "edge_csv": "edges_mix_nonspatial.csv",
+      "checks_json": "checks_mix_nonspatial.json",
+      "representation_npz": "representation_mix_nonspatial.npz"
+    },
+    "mix": {
+      "label": "mix:full+spatial",
+      "n_edges": 1332,
+      "n_components": 4,
+      "largest_component": 291,
+      "singletons": 1,
+      "weights": {
+        "spatial": 1.0,
+        "profile": 0.35,
+        "morphology": 0.5,
+        "align": 0.75
+      },
+      "neighbor_cutoff": 1.474361538887024,
+      "raw_candidate_directed_edges": 1869,
+      "candidate_directed_edges": 1869,
+      "kept_directed_edges": 1850,
+      "pruned_directed_edges": 19,
+      "self_loop_candidates": 0,
+      "duplicated_undirected_edges": 518,
+      "checks": {
+        "measurement": "mix",
+        "label": "mix:full+spatial",
+        "n_nodes": 623,
+        "n_edges": 1332,
+        "n_components": 4,
+        "largest_component": 291,
+        "singletons": 1,
+        "neighbor_cutoff": 1.474361538887024,
+        "candidate_directed_edges": 1869,
+        "raw_candidate_directed_edges": 1869,
+        "self_loop_candidates": 0,
+        "kept_directed_edges": 1850,
+        "pruned_directed_edges": 19,
+        "duplicated_undirected_edges": 518,
         "bad_self_loops": 0,
         "bad_node_index": 0,
         "duplicated_edges_after_write": 0,
         "same_component_mean": 1.0,
         "same_spatial_island_mean": 1.0,
-        "distance_median": 34.160865783691406,
-        "distance_max": 142.04937744140625,
-        "neighbor_distance_median": 0.34869891733924835,
-        "neighbor_distance_max": 0.8668681762237421
+        "distance_median": 40.318336486816406,
+        "distance_max": 136.37818908691406,
+        "neighbor_distance_median": 1.0572433471679688,
+        "neighbor_distance_max": 1.4722051620483398
       },
       "node_csv": "nodes_mix.csv",
       "edge_csv": "edges_mix.csv",
@@ -263,6 +411,7 @@
     "spatial_scaled_distance",
     "profile_distance",
     "morphology_distance",
+    "align_distance",
     "combo_distance",
     "dx",
     "dy",
@@ -281,6 +430,7 @@
     "spatial_weight",
     "profile_weight",
     "morphology_weight",
+    "align_weight",
     "combo_weight",
     "source_component_id",
     "target_component_id",

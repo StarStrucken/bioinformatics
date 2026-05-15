@@ -11,6 +11,8 @@
     "spatial",
     "profile",
     "morphology",
+    "align",
+    "mix_nonspatial",
     "mix"
   ],
   "edge_measurements": {
@@ -19,7 +21,8 @@
       "weights": {
         "spatial": 1.0,
         "profile": 0.0,
-        "morphology": 0.0
+        "morphology": 0.0,
+        "align": 0.0
       },
       "cutoff_quantile": 0.995,
       "cutoff_mad": 8.0
@@ -29,7 +32,8 @@
       "weights": {
         "spatial": 0.0,
         "profile": 1.0,
-        "morphology": 0.0
+        "morphology": 0.0,
+        "align": 0.0
       },
       "cutoff_quantile": 0.98,
       "cutoff_mad": 6.0
@@ -39,20 +43,54 @@
       "weights": {
         "spatial": 0.0,
         "profile": 0.0,
-        "morphology": 1.0
+        "morphology": 1.0,
+        "align": 0.0
       },
       "cutoff_quantile": 0.98,
       "cutoff_mad": 6.0
     },
+    "align": {
+      "label": "align:top_genes",
+      "weights": {
+        "spatial": 0.0,
+        "profile": 0.0,
+        "morphology": 0.0,
+        "align": 1.0
+      },
+      "cutoff_quantile": 0.98,
+      "cutoff_mad": 6.0,
+      "seq_len": 15,
+      "candidate_k": 80,
+      "exact_pairwise": false,
+      "insert_cost": 1.0,
+      "delete_cost": 1.0,
+      "substitute_cost": 2.0
+    },
+    "mix_nonspatial": {
+      "label": "mix:nonspatial",
+      "weights": {
+        "spatial": 0.0,
+        "profile": 0.35,
+        "morphology": 0.5,
+        "align": 0.75
+      },
+      "cutoff_quantile": 0.99,
+      "cutoff_mad": 8.0,
+      "candidate_k": 80,
+      "exact_pairwise": false
+    },
     "mix": {
-      "label": "mix:quick",
+      "label": "mix:full+spatial",
       "weights": {
         "spatial": 1.0,
         "profile": 0.35,
-        "morphology": 0.5
+        "morphology": 0.5,
+        "align": 0.75
       },
       "cutoff_quantile": 0.99,
-      "cutoff_mad": 8.0
+      "cutoff_mad": 8.0,
+      "candidate_k": 80,
+      "exact_pairwise": false
     }
   },
   "edge_summaries": {
@@ -65,7 +103,8 @@
       "weights": {
         "spatial": 1.0,
         "profile": 0.0,
-        "morphology": 0.0
+        "morphology": 0.0,
+        "align": 0.0
       },
       "neighbor_cutoff": 0.07888295501470566,
       "raw_candidate_directed_edges": 21825,
@@ -84,6 +123,8 @@
         "singletons": 4,
         "neighbor_cutoff": 0.07888295501470566,
         "candidate_directed_edges": 21825,
+        "raw_candidate_directed_edges": 21825,
+        "self_loop_candidates": 0,
         "kept_directed_edges": 21715,
         "pruned_directed_edges": 110,
         "duplicated_undirected_edges": 8734,
@@ -111,7 +152,8 @@
       "weights": {
         "spatial": 0.0,
         "profile": 1.0,
-        "morphology": 0.0
+        "morphology": 0.0,
+        "align": 0.0
       },
       "neighbor_cutoff": 0.07005439737290144,
       "raw_candidate_directed_edges": 21825,
@@ -130,6 +172,8 @@
         "singletons": 53,
         "neighbor_cutoff": 0.07005439737290144,
         "candidate_directed_edges": 18741,
+        "raw_candidate_directed_edges": 21825,
+        "self_loop_candidates": 3084,
         "kept_directed_edges": 18360,
         "pruned_directed_edges": 381,
         "duplicated_undirected_edges": 4406,
@@ -157,7 +201,8 @@
       "weights": {
         "spatial": 0.0,
         "profile": 0.0,
-        "morphology": 1.0
+        "morphology": 1.0,
+        "align": 0.0
       },
       "neighbor_cutoff": 0.14964427755847573,
       "raw_candidate_directed_edges": 21825,
@@ -176,6 +221,8 @@
         "singletons": 117,
         "neighbor_cutoff": 0.14964427755847573,
         "candidate_directed_edges": 21796,
+        "raw_candidate_directed_edges": 21825,
+        "self_loop_candidates": 29,
         "kept_directed_edges": 21166,
         "pruned_directed_edges": 630,
         "duplicated_undirected_edges": 8070,
@@ -194,46 +241,147 @@
       "checks_json": "checks_morphology.json",
       "representation_npz": "representation_morphology.npz"
     },
-    "mix": {
-      "label": "mix:quick",
-      "n_edges": 14529,
-      "n_components": 44,
-      "largest_component": 7215,
-      "singletons": 36,
+    "align": {
+      "label": "align:top_genes",
+      "n_edges": 17243,
+      "n_components": 14,
+      "largest_component": 7261,
+      "singletons": 12,
       "weights": {
-        "spatial": 1.0,
-        "profile": 0.35,
-        "morphology": 0.5
+        "spatial": 0.0,
+        "profile": 0.0,
+        "morphology": 0.0,
+        "align": 1.0
       },
-      "neighbor_cutoff": 0.6764213442802429,
+      "neighbor_cutoff": 1.600000023841858,
       "raw_candidate_directed_edges": 21825,
       "candidate_directed_edges": 21825,
-      "kept_directed_edges": 21606,
-      "pruned_directed_edges": 219,
+      "kept_directed_edges": 21730,
+      "pruned_directed_edges": 95,
       "self_loop_candidates": 0,
-      "duplicated_undirected_edges": 7077,
+      "duplicated_undirected_edges": 4487,
       "checks": {
-        "measurement": "mix",
-        "label": "mix:quick",
+        "measurement": "align",
+        "label": "align:top_genes",
         "n_nodes": 7275,
-        "n_edges": 14529,
-        "n_components": 44,
-        "largest_component": 7215,
-        "singletons": 36,
-        "neighbor_cutoff": 0.6764213442802429,
+        "n_edges": 17243,
+        "n_components": 14,
+        "largest_component": 7261,
+        "singletons": 12,
+        "neighbor_cutoff": 1.600000023841858,
         "candidate_directed_edges": 21825,
-        "kept_directed_edges": 21606,
-        "pruned_directed_edges": 219,
-        "duplicated_undirected_edges": 7077,
+        "raw_candidate_directed_edges": 21825,
+        "self_loop_candidates": 0,
+        "kept_directed_edges": 21730,
+        "pruned_directed_edges": 95,
+        "duplicated_undirected_edges": 4487,
         "bad_self_loops": 0,
         "bad_node_index": 0,
         "duplicated_edges_after_write": 0,
         "same_component_mean": 1.0,
         "same_spatial_island_mean": 1.0,
-        "distance_median": 42.42472457885742,
-        "distance_max": 197.85189819335938,
-        "neighbor_distance_median": 0.28099520021975427,
-        "neighbor_distance_max": 0.6763701458513524
+        "distance_median": 420.6484375,
+        "distance_max": 1326.1373291015625,
+        "neighbor_distance_median": 1.2000000476837158,
+        "neighbor_distance_max": 1.600000023841858
+      },
+      "node_csv": "nodes_align.csv",
+      "edge_csv": "edges_align.csv",
+      "checks_json": "checks_align.json",
+      "representation_npz": "representation_align.npz"
+    },
+    "mix_nonspatial": {
+      "label": "mix:nonspatial",
+      "n_edges": 16506,
+      "n_components": 24,
+      "largest_component": 7251,
+      "singletons": 22,
+      "weights": {
+        "spatial": 0.0,
+        "profile": 0.35,
+        "morphology": 0.5,
+        "align": 0.75
+      },
+      "neighbor_cutoff": 1.2060641050338745,
+      "raw_candidate_directed_edges": 21825,
+      "candidate_directed_edges": 21825,
+      "kept_directed_edges": 21606,
+      "pruned_directed_edges": 219,
+      "self_loop_candidates": 0,
+      "duplicated_undirected_edges": 5100,
+      "checks": {
+        "measurement": "mix_nonspatial",
+        "label": "mix:nonspatial",
+        "n_nodes": 7275,
+        "n_edges": 16506,
+        "n_components": 24,
+        "largest_component": 7251,
+        "singletons": 22,
+        "neighbor_cutoff": 1.2060641050338745,
+        "candidate_directed_edges": 21825,
+        "raw_candidate_directed_edges": 21825,
+        "self_loop_candidates": 0,
+        "kept_directed_edges": 21606,
+        "pruned_directed_edges": 219,
+        "duplicated_undirected_edges": 5100,
+        "bad_self_loops": 0,
+        "bad_node_index": 0,
+        "duplicated_edges_after_write": 0,
+        "same_component_mean": 1.0,
+        "same_spatial_island_mean": 1.0,
+        "distance_median": 405.9979553222656,
+        "distance_max": 1296.1361083984375,
+        "neighbor_distance_median": 0.9040787220001221,
+        "neighbor_distance_max": 1.2060298919677734
+      },
+      "node_csv": "nodes_mix_nonspatial.csv",
+      "edge_csv": "edges_mix_nonspatial.csv",
+      "checks_json": "checks_mix_nonspatial.json",
+      "representation_npz": "representation_mix_nonspatial.npz"
+    },
+    "mix": {
+      "label": "mix:full+spatial",
+      "n_edges": 15932,
+      "n_components": 33,
+      "largest_component": 7234,
+      "singletons": 28,
+      "weights": {
+        "spatial": 1.0,
+        "profile": 0.35,
+        "morphology": 0.5,
+        "align": 0.75
+      },
+      "neighbor_cutoff": 1.3053970336914062,
+      "raw_candidate_directed_edges": 21825,
+      "candidate_directed_edges": 21825,
+      "kept_directed_edges": 21606,
+      "pruned_directed_edges": 219,
+      "self_loop_candidates": 0,
+      "duplicated_undirected_edges": 5674,
+      "checks": {
+        "measurement": "mix",
+        "label": "mix:full+spatial",
+        "n_nodes": 7275,
+        "n_edges": 15932,
+        "n_components": 33,
+        "largest_component": 7234,
+        "singletons": 28,
+        "neighbor_cutoff": 1.3053970336914062,
+        "candidate_directed_edges": 21825,
+        "raw_candidate_directed_edges": 21825,
+        "self_loop_candidates": 0,
+        "kept_directed_edges": 21606,
+        "pruned_directed_edges": 219,
+        "duplicated_undirected_edges": 5674,
+        "bad_self_loops": 0,
+        "bad_node_index": 0,
+        "duplicated_edges_after_write": 0,
+        "same_component_mean": 1.0,
+        "same_spatial_island_mean": 1.0,
+        "distance_median": 62.48551940917969,
+        "distance_max": 310.963623046875,
+        "neighbor_distance_median": 0.9837141036987305,
+        "neighbor_distance_max": 1.3053091764450073
       },
       "node_csv": "nodes_mix.csv",
       "edge_csv": "edges_mix.csv",
@@ -263,6 +411,7 @@
     "spatial_scaled_distance",
     "profile_distance",
     "morphology_distance",
+    "align_distance",
     "combo_distance",
     "dx",
     "dy",
@@ -281,6 +430,7 @@
     "spatial_weight",
     "profile_weight",
     "morphology_weight",
+    "align_weight",
     "combo_weight",
     "source_component_id",
     "target_component_id",

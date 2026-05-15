@@ -11,6 +11,12 @@ import scipy.sparse as sp
 from scipy.sparse.csgraph import connected_components
 from sklearn.neighbors import NearestNeighbors
 
+try:
+    from tqdm.auto import tqdm
+except Exception:
+    def tqdm(x, **kwargs):
+        return x
+
 CELL_TABLE_NAMES = ("cells.csv.gz", "cells.csv", "cells.parquet")
 DATA_ROOT = Path("data")
 OUTPUT_ROOT = Path("outputs")
@@ -18,27 +24,49 @@ OUTPUT_ROOT = Path("outputs")
 EDGE_MEASUREMENTS = {
     "spatial": {
         "label": "spatial:xy",
-        "weights": {"spatial": 1.0, "profile": 0.0, "morphology": 0.0},
+        "weights": {"spatial": 1.0, "profile": 0.0, "morphology": 0.0, "align": 0.0},
         "cutoff_quantile": 0.995,
         "cutoff_mad": 8.0,
     },
     "profile": {
         "label": "rna:summary",
-        "weights": {"spatial": 0.0, "profile": 1.0, "morphology": 0.0},
+        "weights": {"spatial": 0.0, "profile": 1.0, "morphology": 0.0, "align": 0.0},
         "cutoff_quantile": 0.98,
         "cutoff_mad": 6.0,
     },
     "morphology": {
         "label": "morphology:area",
-        "weights": {"spatial": 0.0, "profile": 0.0, "morphology": 1.0},
+        "weights": {"spatial": 0.0, "profile": 0.0, "morphology": 1.0, "align": 0.0},
         "cutoff_quantile": 0.98,
         "cutoff_mad": 6.0,
     },
-    "mix": {
-        "label": "mix:quick",
-        "weights": {"spatial": 1.0, "profile": 0.35, "morphology": 0.50},
+    "align": {
+        "label": "align:top_genes",
+        "weights": {"spatial": 0.0, "profile": 0.0, "morphology": 0.0, "align": 1.0},
+        "cutoff_quantile": 0.98,
+        "cutoff_mad": 6.0,
+        "seq_len": 15,
+        "candidate_k": 80,
+        "exact_pairwise": False,
+        "insert_cost": 1.0,
+        "delete_cost": 1.0,
+        "substitute_cost": 2.0,
+    },
+    "mix_nonspatial": {
+        "label": "mix:nonspatial",
+        "weights": {"spatial": 0.0, "profile": 0.35, "morphology": 0.50, "align": 0.75},
         "cutoff_quantile": 0.99,
         "cutoff_mad": 8.0,
+        "candidate_k": 80,
+        "exact_pairwise": False,
+    },
+    "mix": {
+        "label": "mix:full+spatial",
+        "weights": {"spatial": 1.0, "profile": 0.35, "morphology": 0.50, "align": 0.75},
+        "cutoff_quantile": 0.99,
+        "cutoff_mad": 8.0,
+        "candidate_k": 80,
+        "exact_pairwise": False,
     },
 }
 
@@ -265,6 +293,106 @@ def per_cell_counts(x):
 
     return total.astype(np.float32), detected.astype(np.int32)
 
+def top_gene_sequences(adata, n: int = 25):
+    names = np.asarray(adata.var_names.astype(str))
+    x = adata.X
+
+    out_ids = []
+    out_names = []
+
+    for i in tqdm(range(adata.n_obs), desc="top genes", leave=False):
+        if sp.issparse(x):
+            row = x.getrow(i)
+            idx = row.indices
+            val = row.data
+        else:
+            row = np.asarray(x[i]).ravel()
+            idx = np.flatnonzero(row > 0)
+            val = row[idx]
+
+        if idx.size == 0:
+            out_ids.append("")
+            out_names.append("")
+            continue
+
+        if idx.size > n:
+            pick = np.argpartition(val, -n)[-n:]
+            idx = idx[pick]
+            val = val[pick]
+
+        order = np.lexsort((idx, -val))
+        idx = idx[order]
+
+        out_ids.append(" ".join(map(str, idx.tolist())))
+        out_names.append("|".join(names[idx].tolist()))
+
+    return out_ids, out_names
+
+
+def parse_seq_ids(x):
+    if x is None or pd.isna(x):
+        return ()
+
+    s = str(x).strip()
+
+    if not s:
+        return ()
+
+    return tuple(int(v) for v in s.split())
+
+
+def edit_distance(a, b, insert_cost=1.0, delete_cost=1.0, substitute_cost=2.0):
+    if a == b:
+        return 0.0
+
+    if not a:
+        return len(b) * insert_cost
+
+    if not b:
+        return len(a) * delete_cost
+
+    prev = np.arange(len(b) + 1, dtype=np.float32) * insert_cost
+
+    for i, ca in enumerate(a, start=1):
+        curr = np.empty(len(b) + 1, dtype=np.float32)
+        curr[0] = i * delete_cost
+
+        for j, cb in enumerate(b, start=1):
+            sub = 0.0 if ca == cb else substitute_cost
+            curr[j] = min(
+                prev[j] + delete_cost,
+                curr[j - 1] + insert_cost,
+                prev[j - 1] + sub,
+            )
+
+        prev = curr
+
+    return float(prev[-1])
+
+
+def normalized_edit_distance(a, b):
+    cfg = EDGE_MEASUREMENTS["align"]
+
+    d = edit_distance(
+        a,
+        b,
+        cfg["insert_cost"],
+        cfg["delete_cost"],
+        cfg["substitute_cost"],
+    )
+
+    return d / max(len(a), len(b), 1)
+
+
+def node_sequences(nodes: pd.DataFrame):
+    return [parse_seq_ids(v) for v in nodes["top_gene_ids"].to_numpy()]
+
+
+def pair_align_distance(seqs, src, dst):
+    return np.asarray(
+        [normalized_edit_distance(seqs[int(s)], seqs[int(t)]) for s, t in zip(src, dst)],
+        dtype=np.float32,
+    )
 
 def make_nodes(adata) -> pd.DataFrame:
     total, detected = per_cell_counts(adata.X)
@@ -291,6 +419,11 @@ def make_nodes(adata) -> pd.DataFrame:
     )
     nucleus_cell_ratio = clean_float(nucleus_cell_ratio)
 
+    seq_ids, seq_names = top_gene_sequences(
+        adata,
+        EDGE_MEASUREMENTS["align"]["seq_len"],
+    )
+
     return pd.DataFrame(
         {
             "node_index": np.arange(adata.n_obs, dtype=np.int64),
@@ -312,6 +445,8 @@ def make_nodes(adata) -> pd.DataFrame:
             "log_total_counts": np.log1p(total),
             "n_detected_genes": detected,
             "log_detected_genes": np.log1p(detected),
+            "top_gene_ids": seq_ids,
+            "top_genes": seq_names,
 
             "cell_area": cell_area,
             "nucleus_area": nucleus_area,
@@ -350,7 +485,15 @@ def edge_blocks(nodes: pd.DataFrame):
 
 def edge_embedding(blocks: dict[str, np.ndarray], measurement: str) -> np.ndarray:
     weights = EDGE_MEASUREMENTS[measurement]["weights"]
-    parts = [blocks[name] * weight for name, weight in weights.items() if weight > 0]
+    parts = [
+        blocks[name] * weight
+        for name, weight in weights.items()
+        if weight > 0 and name in blocks
+    ]
+
+    if not parts:
+        raise ValueError(f"no vector embedding for {measurement}")
+
     return np.concatenate(parts, axis=1) if len(parts) > 1 else parts[0]
 
 
@@ -454,6 +597,8 @@ def graph_checks(
 
         "neighbor_cutoff": edges.attrs.get("neighbor_cutoff"),
         "candidate_directed_edges": edges.attrs.get("candidate_directed_edges"),
+        "raw_candidate_directed_edges": edges.attrs.get("raw_candidate_directed_edges"),
+        "self_loop_candidates": edges.attrs.get("self_loop_candidates", 0),
         "kept_directed_edges": edges.attrs.get("kept_directed_edges"),
         "pruned_directed_edges": edges.attrs.get("pruned_directed_edges"),
         "duplicated_undirected_edges": edges.attrs.get("duplicated_undirected_edges", 0),
@@ -564,6 +709,111 @@ def auto_neighbor_cutoff(values: np.ndarray, measurement: str) -> float:
 
     return float(cutoff)
 
+def candidate_embedding(blocks: dict[str, np.ndarray], measurement: str) -> np.ndarray:
+    weights = EDGE_MEASUREMENTS[measurement]["weights"]
+
+    if measurement == "align":
+        return blocks["profile"]
+
+    parts = []
+
+    for name in ["spatial", "profile", "morphology"]:
+        w = float(weights.get(name, 0.0))
+        if w > 0:
+            parts.append(blocks[name] * w)
+
+    if not parts:
+        return blocks["profile"]
+
+    return np.concatenate(parts, axis=1) if len(parts) > 1 else parts[0]
+
+
+def score_candidates(blocks, seqs, i: int, candidates: np.ndarray, measurement: str):
+    weights = EDGE_MEASUREMENTS[measurement]["weights"]
+    score2 = np.zeros(candidates.size, dtype=np.float32)
+
+    for name in ["spatial", "profile", "morphology"]:
+        w = float(weights.get(name, 0.0))
+
+        if w <= 0:
+            continue
+
+        d = np.linalg.norm(blocks[name][candidates] - blocks[name][i], axis=1).astype(np.float32)
+        score2 += (w * d) ** 2
+
+    w_align = float(weights.get("align", 0.0))
+
+    if w_align > 0:
+        a = seqs[i]
+        d = np.asarray(
+            [normalized_edit_distance(a, seqs[int(j)]) for j in candidates],
+            dtype=np.float32,
+        )
+        score2 += (w_align * d) ** 2
+
+    return np.sqrt(score2).astype(np.float32)
+
+
+def pairwise_neighbors(nodes, blocks, k: int, measurement: str):
+    n = nodes.shape[0]
+    kk = min(k, n - 1)
+
+    cfg = EDGE_MEASUREMENTS[measurement]
+    exact = bool(cfg.get("exact_pairwise", False))
+    candidate_k = min(int(cfg.get("candidate_k", 80)), n - 1)
+
+    seqs = node_sequences(nodes)
+
+    if exact:
+        candidate_idx = None
+    else:
+        emb = candidate_embedding(blocks, measurement)
+        emb = np.nan_to_num(emb, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+
+        _, candidate_idx = (
+            NearestNeighbors(n_neighbors=candidate_k + 1, algorithm="kd_tree")
+            .fit(emb)
+            .kneighbors(emb)
+        )
+
+    sources = []
+    targets = []
+    distances = []
+
+    for i in tqdm(range(n), desc=f"{measurement} candidates", leave=False):
+        if exact:
+            candidates = np.arange(n, dtype=np.int64)
+            candidates = candidates[candidates != i]
+        else:
+            candidates = candidate_idx[i].astype(np.int64)
+            candidates = candidates[candidates != i]
+            candidates = np.unique(candidates)
+
+        if candidates.size == 0:
+            continue
+
+        score = score_candidates(blocks, seqs, i, candidates, measurement)
+
+        take = min(kk, candidates.size)
+
+        if take >= candidates.size:
+            order = np.argsort(score)
+        else:
+            order = np.argpartition(score, take)[:take]
+            order = order[np.argsort(score[order])]
+
+        picked = candidates[order]
+
+        sources.append(np.full(picked.size, i, dtype=np.int64))
+        targets.append(picked.astype(np.int64))
+        distances.append(score[order].astype(np.float32))
+
+    source = np.concatenate(sources) if sources else np.array([], dtype=np.int64)
+    target = np.concatenate(targets) if targets else np.array([], dtype=np.int64)
+    distance = np.concatenate(distances) if distances else np.array([], dtype=np.float32)
+
+    return source, target, distance
+
 def make_edges(
     nodes: pd.DataFrame,
     blocks: dict[str, np.ndarray],
@@ -584,6 +834,7 @@ def make_edges(
         "spatial_scaled_distance",
         "profile_distance",
         "morphology_distance",
+        "align_distance",
         "combo_distance",
 
         "dx",
@@ -605,25 +856,34 @@ def make_edges(
         "spatial_weight",
         "profile_weight",
         "morphology_weight",
+        "align_weight",
         "combo_weight",
     ]
 
     if n < 2:
         return pd.DataFrame(columns=cols)
 
-    embed = edge_embedding(blocks, measurement)
-    embed = np.nan_to_num(embed, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+    if measurement in {"align", "mix_nonspatial", "mix"}:
+        source, target, neighbor_distance = pairwise_neighbors(
+            nodes,
+            blocks,
+            k,
+            measurement,
+        )
+    else:
+        embed = edge_embedding(blocks, measurement)
+        embed = np.nan_to_num(embed, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
 
-    kk = min(k, n - 1)
-    neighbor_distance, idx = (
-        NearestNeighbors(n_neighbors=kk + 1, algorithm="kd_tree")
-        .fit(embed)
-        .kneighbors(embed)
-    )
+        kk = min(k, n - 1)
+        neighbor_distance, idx = (
+            NearestNeighbors(n_neighbors=kk + 1, algorithm="kd_tree")
+            .fit(embed)
+            .kneighbors(embed)
+        )
 
-    source = np.repeat(np.arange(n), kk)
-    target = idx[:, 1:].ravel()
-    neighbor_distance = neighbor_distance[:, 1:].ravel()
+        source = np.repeat(np.arange(n), kk)
+        target = idx[:, 1:].ravel()
+        neighbor_distance = neighbor_distance[:, 1:].ravel()
 
     raw_candidate_directed_edges = int(neighbor_distance.size)
 
@@ -680,13 +940,16 @@ def make_edges(
     spatial_scaled_distance = pair_block_distance(blocks["spatial"], src, dst)
     profile_distance = pair_block_distance(blocks["profile"], src, dst)
     morphology_distance = pair_block_distance(blocks["morphology"], src, dst)
+    seqs = node_sequences(nodes)
+    align_distance = pair_align_distance(seqs, src, dst)
 
     weights = EDGE_MEASUREMENTS[measurement]["weights"]
 
     combo_distance = np.sqrt(
-        (weights["spatial"] * spatial_scaled_distance) ** 2
-        + (weights["profile"] * profile_distance) ** 2
-        + (weights["morphology"] * morphology_distance) ** 2
+        (weights.get("spatial", 0.0) * spatial_scaled_distance) ** 2
+        + (weights.get("profile", 0.0) * profile_distance) ** 2
+        + (weights.get("morphology", 0.0) * morphology_distance) ** 2
+        + (weights.get("align", 0.0) * align_distance) ** 2
     ).astype(np.float32)
 
     ids = nodes["cell_id"].to_numpy(dtype=str)
@@ -704,6 +967,7 @@ def make_edges(
     edges["spatial_scaled_distance"] = spatial_scaled_distance
     edges["profile_distance"] = profile_distance
     edges["morphology_distance"] = morphology_distance
+    edges["align_distance"] = align_distance
     edges["combo_distance"] = combo_distance
 
     edges["dx"] = dx
@@ -725,6 +989,7 @@ def make_edges(
     edges["spatial_weight"] = 1.0 / (1.0 + spatial_scaled_distance)
     edges["profile_weight"] = 1.0 / (1.0 + profile_distance)
     edges["morphology_weight"] = 1.0 / (1.0 + morphology_distance)
+    edges["align_weight"] = 1.0 / (1.0 + align_distance)
     edges["combo_weight"] = 1.0 / (1.0 + combo_distance)
 
     edges["source_cell_id"] = ids[src]
@@ -760,6 +1025,7 @@ def representation(nodes: pd.DataFrame, edges: pd.DataFrame):
         "spatial_scaled_distance",
         "profile_distance",
         "morphology_distance",
+        "align_distance",
         "combo_distance",
 
         "dx",
@@ -782,6 +1048,7 @@ def representation(nodes: pd.DataFrame, edges: pd.DataFrame):
         "spatial_weight",
         "profile_weight",
         "morphology_weight",
+        "align_weight",
         "combo_weight",
 
         "source_component_id",
@@ -904,6 +1171,7 @@ def plot_edge_hist(edges: pd.DataFrame, out_path: Path):
         "spatial_scaled_distance",
         "profile_distance",
         "morphology_distance",
+        "align_distance",
         "combo_distance",
     ]
 
@@ -959,6 +1227,9 @@ def parse_args():
     p.add_argument("--max-cells", type=int, default=50_000)
     p.add_argument("--k", type=int, default=3)
     p.add_argument("--only", choices=["all", *EDGE_MEASUREMENTS.keys()], default="all")
+    p.add_argument("--align-seq-len", type=int, default=15)
+    p.add_argument("--align-candidates", type=int, default=80)
+    p.add_argument("--align-exact", action="store_true")
     return p.parse_args()
 
 def dump_one_graph(
@@ -1018,7 +1289,7 @@ def dump_one_graph(
 
     plot_edge_hist(edges, out_dir / f"edge_metrics_{measurement}.png")
 
-    if measurement == "mix":
+    if measurement == "mix_nonspatial":
         graph_nodes.to_csv(out_dir / "nodes_graph.csv", index=False)
         edges.to_csv(out_dir / "edges.csv", index=False)
 
@@ -1045,6 +1316,15 @@ def dump_one_graph(
 
 def main():
     args = parse_args()
+
+    EDGE_MEASUREMENTS["align"]["seq_len"] = int(args.align_seq_len)
+    EDGE_MEASUREMENTS["align"]["candidate_k"] = int(args.align_candidates)
+    EDGE_MEASUREMENTS["mix"]["candidate_k"] = int(args.align_candidates)
+    EDGE_MEASUREMENTS["mix_nonspatial"]["candidate_k"] = int(args.align_candidates)
+
+    EDGE_MEASUREMENTS["align"]["exact_pairwise"] = bool(args.align_exact)
+    EDGE_MEASUREMENTS["mix"]["exact_pairwise"] = bool(args.align_exact)
+    EDGE_MEASUREMENTS["mix_nonspatial"]["exact_pairwise"] = bool(args.align_exact)
 
     xenium_dir = DATA_ROOT / args.dataset_id
     out_dir = OUTPUT_ROOT / args.dataset_id
