@@ -1,0 +1,12 @@
+numpy==2.4.4
+pandas==2.3.3
+scipy==1.17.1
+scikit-learn==1.8.0
+scanpy==1.12.1
+h5py==3.16.0
+pyarrow==23.0.1
+matplotlib==3.10.8
+tqdm==4.67.3
+RapidFuzz==3.14.5
+PySide6==6.11.1
+pyqtgraph==0.14.0
