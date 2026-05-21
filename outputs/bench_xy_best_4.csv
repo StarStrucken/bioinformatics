@@ -1,0 +1,6 @@
+dataset,measurement,median_vs_center,median_xy_error
+tiny_human_kidney_protein_v4,seq_jaccard,0.7378125240147813,57.32292233560531
+tiny_human_ovary_multimodal_v4,expr_morph,0.7049915692279527,210.06366785442657
+tiny_human_ovary_nucexp_v4,morph_heavy,0.6665346250435886,199.55360819364813
+tiny_mouse_ileum_multimodal_v3,expression,0.0675300294283873,16.016013416279414
+tiny_mouse_ileum_nucexp_v3,seq_blast,0.0747318007337439,18.77350468531817

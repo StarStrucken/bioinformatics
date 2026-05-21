@@ -8,39 +8,66 @@ import pandas as pd
 from PySide6 import QtCore, QtWidgets, QtGui
 import pyqtgraph as pg
 
+from xenum_axes import build_axis_space
+from xenum_distances import distance_blocks, pair_distance
+from xenum_measurements import MEASUREMENTS
+from xenum_paths import existing_out_dir
 
-MEASUREMENTS = ["spatial", "profile", "morphology", "align", "mix_nonspatial", "mix"]
 MAX_VISIBLE_EDGES = 12_000
 MAX_COMPONENT_EDGES = 2_000
+MAX_VISIBLE_NODES = 80_000
 COMPONENT_PALETTE = [
-    (230, 25, 75),    # red
-    (0, 130, 200),    # blue
-    (60, 180, 75),    # green
-    (245, 130, 48),   # orange
-    (145, 30, 180),   # purple
-    (70, 240, 240),   # cyan
-    (240, 50, 230),   # magenta
-    (210, 245, 60),   # lime
-    (250, 190, 190),  # pink
-    (0, 128, 128),    # teal
-    (230, 190, 255),  # lavender
-    (170, 110, 40),   # brown
+    (230, 25, 75),
+    (0, 130, 200),
+    (60, 180, 75),
+    (245, 130, 48),
+    (145, 30, 180),
+    (70, 240, 240),
+    (240, 50, 230),
+    (210, 245, 60),
+    (250, 190, 190),
+    (0, 128, 128),
+    (230, 190, 255),
+    (170, 110, 40),
 ]
 
+def discover_measurements(out_dir: Path):
+    found = []
+
+    for edge_path in sorted(out_dir.glob("edges_*.csv")):
+        m = edge_path.stem.removeprefix("edges_")
+        node_path = out_dir / f"nodes_{m}.csv"
+        if node_path.exists():
+            found.append(m)
+
+    ordered = [m for m in MEASUREMENTS if m in found]
+    ordered.extend(m for m in found if m not in ordered)
+
+    if not ordered and (out_dir / "nodes_graph.csv").exists() and (out_dir / "edges.csv").exists():
+        ordered = ["graph"]
+
+    return ordered
 
 def load_dump(out_dir: Path):
     nodes = {}
     edges = {}
+    measurements = discover_measurements(out_dir)
 
-    for m in MEASUREMENTS:
-        node_path = out_dir / f"nodes_{m}.csv"
-        edge_path = out_dir / f"edges_{m}.csv"
+    for m in measurements:
+        if m == "graph":
+            node_path = out_dir / "nodes_graph.csv"
+            edge_path = out_dir / "edges.csv"
+        else:
+            node_path = out_dir / f"nodes_{m}.csv"
+            edge_path = out_dir / f"edges_{m}.csv"
 
         nodes[m] = pd.read_csv(node_path)
         edges[m] = pd.read_csv(edge_path)
 
-    return nodes, edges
+    if not measurements:
+        raise FileNotFoundError(f"no nodes_*.csv / edges_*.csv in {out_dir}")
 
+    return measurements, nodes, edges
 
 def build_neighbors(edges_by_measurement):
     out = {}
@@ -51,7 +78,7 @@ def build_neighbors(edges_by_measurement):
             t = int(r.target)
 
             nd = float(r.neighbor_distance)
-            xy = float(r.distance)
+            xy = float(getattr(r, "distance", getattr(r, "xy_distance", np.nan)))
 
             out.setdefault(s, {}).setdefault(m, []).append((t, nd, xy))
             out.setdefault(t, {}).setdefault(m, []).append((s, nd, xy))
@@ -62,137 +89,22 @@ def build_neighbors(edges_by_measurement):
 
     return out
 
-def zscore(x):
-    x = np.asarray(x, dtype=np.float32)
-    if x.ndim == 1:
-        x = x[:, None]
-
-    ok = np.isfinite(x)
-    counts = ok.sum(axis=0)
-    mean = np.where(ok, x, 0.0).sum(axis=0) / np.maximum(counts, 1)
-
-    x = np.where(ok, x, mean)
-    z = (x - mean) / (x.std(axis=0) + 1e-6)
-
-    return np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)
-
-
-def distance_blocks(nodes):
-    spatial = zscore(nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32))
-
-    profile = zscore(
-        nodes[
-            [
-                "log_total_counts",
-                "log_detected_genes",
-            ]
-        ].to_numpy(dtype=np.float32)
-    )
-
-    morphology = zscore(
-        nodes[
-            [
-                "cell_area",
-                "nucleus_area",
-                "nucleus_cell_ratio",
-            ]
-        ].to_numpy(dtype=np.float32)
-    )
-
-    align = [parse_seq_ids(v) for v in nodes["top_gene_ids"].to_numpy()]
-
-    return {
-        "spatial": spatial,
-        "profile": profile,
-        "morphology": morphology,
-        "align": align,
-    }
-
-
-def pair_distance(blocks, measurement, a, b):
-    if measurement == "align":
-        return normalized_edit_distance(blocks["align"][a], blocks["align"][b])
-
-    if measurement in {"mix_nonspatial", "mix"}:
-        spatial = blocks["spatial"][a] - blocks["spatial"][b]
-        profile = blocks["profile"][a] - blocks["profile"][b]
-        morphology = blocks["morphology"][a] - blocks["morphology"][b]
-
-        d_spatial = float(np.sqrt(np.sum(spatial * spatial)))
-        d_profile = float(np.sqrt(np.sum(profile * profile)))
-        d_morphology = float(np.sqrt(np.sum(morphology * morphology)))
-        d_align = normalized_edit_distance(blocks["align"][a], blocks["align"][b])
-
-        w_spatial = 0.0 if measurement == "mix_nonspatial" else 1.0
-
-        return float(
-            np.sqrt(
-                (w_spatial * d_spatial) ** 2
-                + (0.35 * d_profile) ** 2
-                + (0.50 * d_morphology) ** 2
-                + (0.75 * d_align) ** 2
-            )
-        )
-
-    v = blocks[measurement][a] - blocks[measurement][b]
-    return float(np.sqrt(np.sum(v * v)))
-
-def parse_seq_ids(x):
-    if x is None or pd.isna(x):
-        return ()
-
-    s = str(x).strip()
-
-    if not s:
-        return ()
-
-    return tuple(int(v) for v in s.split())
-
-
-def edit_distance(a, b, insert_cost=1.0, delete_cost=1.0, substitute_cost=2.0):
-    if a == b:
-        return 0.0
-
-    if not a:
-        return len(b) * insert_cost
-
-    if not b:
-        return len(a) * delete_cost
-
-    prev = np.arange(len(b) + 1, dtype=np.float32) * insert_cost
-
-    for i, ca in enumerate(a, start=1):
-        curr = np.empty(len(b) + 1, dtype=np.float32)
-        curr[0] = i * delete_cost
-
-        for j, cb in enumerate(b, start=1):
-            sub = 0.0 if ca == cb else substitute_cost
-            curr[j] = min(
-                prev[j] + delete_cost,
-                curr[j - 1] + insert_cost,
-                prev[j - 1] + sub,
-            )
-
-        prev = curr
-
-    return float(prev[-1])
-
-
-def normalized_edit_distance(a, b):
-    return edit_distance(a, b, 1.0, 1.0, 2.0) / max(len(a), len(b), 1)
-
 class GraphPane(QtWidgets.QWidget):
     nodeClicked = QtCore.Signal(int)
 
-    def __init__(self, measurement, nodes, edges):
+    def __init__(self, measurement, nodes, edges, axis_values):
         super().__init__()
 
         self.measurement = measurement
         self.nodes = nodes
         self.edges = edges
+        self.axis_values = axis_values
+        self.x_axis = "spatial.x"
+        self.y_axis = "spatial.y"
+        self.y_scale = -1.0
 
-        self.x = nodes["x_centroid"].to_numpy(dtype=float)
-        self.y = nodes["y_centroid"].to_numpy(dtype=float)
+        self.x = self.axis_values[self.x_axis].astype(float)
+        self.y = self.axis_values[self.y_axis].astype(float) * self.y_scale
 
         self.component_id = (
             nodes["component_id"].to_numpy(dtype=int)
@@ -215,12 +127,13 @@ class GraphPane(QtWidgets.QWidget):
             else np.empty((0, 2), dtype=int)
         )
         self.rng = np.random.default_rng(0)
-        self.visible_edge_pairs = self._sample_pairs(self.edge_pairs, MAX_VISIBLE_EDGES)
         self.component_pair_cache = {}
 
         self.plot = pg.PlotWidget()
         self.plot.setTitle(measurement)
-        self.plot.invertY(True)
+        self.plot.invertY(False)
+        self.plot.setLabel("bottom", self.x_axis)
+        self.plot.setLabel("left", self._y_label())
         self.plot.showGrid(x=True, y=True, alpha=0.15)
 
         self.all_edges = pg.PlotDataItem(
@@ -280,7 +193,6 @@ class GraphPane(QtWidgets.QWidget):
         self.plot.addItem(self.neighbor_nodes)
         self.plot.addItem(self.selected_node)
 
-        self._draw_all_edges()
         self._refresh_nodes()
         self._refresh_edges()
 
@@ -288,13 +200,19 @@ class GraphPane(QtWidgets.QWidget):
         layout.setContentsMargins(2, 2, 2, 2)
         layout.addWidget(self.plot)
 
+    def _sample_indices(self, idx, limit):
+        if idx is None or len(idx) <= limit:
+            return idx
+
+        take = self.rng.choice(len(idx), limit, replace=False)
+        return idx[take]
+
     def _sample_pairs(self, pairs, limit):
         if pairs is None or len(pairs) <= limit:
             return pairs
 
         idx = self.rng.choice(len(pairs), limit, replace=False)
         return pairs[idx]
-
 
     def _component_pairs(self, comp):
         comp = int(comp)
@@ -344,6 +262,28 @@ class GraphPane(QtWidgets.QWidget):
 
         return brushes
 
+    def _y_label(self):
+        if abs(self.y_scale - 1.0) < 1e-9:
+            return self.y_axis
+        return f"{self.y_axis} * {self.y_scale:g}"
+
+    def set_axes(self, x_axis, y_axis, y_scale):
+        self.x_axis = x_axis
+        self.y_axis = y_axis
+        self.y_scale = float(y_scale)
+        self.x = self.axis_values[x_axis].astype(float)
+        self.y = self.axis_values[y_axis].astype(float) * self.y_scale
+        self.plot.setLabel("bottom", x_axis)
+        self.plot.setLabel("left", self._y_label())
+        self.plot.invertY(False)
+        self._refresh_nodes()
+        self._refresh_edges()
+        self.component_nodes.setData([], [])
+        self.neighbor_nodes.setData([], [])
+        self.selected_node.setData([], [])
+        self.component_edges.setData([], [])
+        self.selected_edges.setData([], [])
+
     def _edge_lines(self, pairs):
         if pairs is None or len(pairs) == 0:
             return [], []
@@ -360,9 +300,6 @@ class GraphPane(QtWidgets.QWidget):
         ys[2::3] = np.nan
 
         return xs, ys
-
-    def _draw_all_edges(self):
-        self._refresh_edges()
 
     def _clicked(self, item, points):
         if points is None or len(points) == 0:
@@ -436,11 +373,9 @@ class GraphPane(QtWidgets.QWidget):
 
         self._refresh_visibility()
 
-
     def set_singletons_visible(self, visible):
         self.show_singletons = bool(visible)
         self._refresh_visibility()
-
 
     def _refresh_visibility(self):
         comp_ok = np.isin(self.component_id, list(self.visible_components))
@@ -461,9 +396,9 @@ class GraphPane(QtWidgets.QWidget):
         self.component_edges.setData([], [])
         self.selected_edges.setData([], [])
 
-
     def _refresh_nodes(self):
         idx = np.flatnonzero(self.visible_node_mask)
+        idx = self._sample_indices(idx, MAX_VISIBLE_NODES)
 
         self.scatter.setData(
             x=self.x[idx],
@@ -471,7 +406,6 @@ class GraphPane(QtWidgets.QWidget):
             brush=self._component_brushes(idx),
             data=idx,
         )
-
 
     def _refresh_edges(self):
         if len(self.edge_pairs) == 0:
@@ -491,20 +425,23 @@ class GraphPane(QtWidgets.QWidget):
 
         self.component_pair_cache = {}
 
-
 class NeighborTable(QtWidgets.QTableWidget):
-    def __init__(self):
+    def __init__(self, measurements):
         super().__init__()
-        self.setColumnCount(3 + len(MEASUREMENTS))
-        self.setHorizontalHeaderLabels(["neighbor", "cell_id", "overlap", *MEASUREMENTS])
-
+        self.measurements = []
+        self.set_measurements(measurements)
         self.horizontalHeader().setStretchLastSection(True)
         self.setSortingEnabled(True)
+
+    def set_measurements(self, measurements):
+        self.measurements = list(measurements)
+        self.setColumnCount(3 + len(self.measurements))
+        self.setHorizontalHeaderLabels(["neighbor", "cell_id", "overlap", *self.measurements])
 
     def show_node(self, node, nodes, blocks, neighbors_by_measurement):
         union = {}
 
-        for m in MEASUREMENTS:
+        for m in self.measurements:
             for rank, (n, nd, xy) in enumerate(neighbors_by_measurement.get(m, []), start=1):
                 union.setdefault(n, {})[m] = (rank, nd, xy)
 
@@ -520,7 +457,7 @@ class NeighborTable(QtWidgets.QTableWidget):
         self.setSortingEnabled(False)
         self.setRowCount(len(rows))
 
-        base_nodes = nodes["spatial"]
+        base_nodes = nodes["spatial"] if "spatial" in nodes else next(iter(nodes.values()))
 
         for row_i, (n, overlap, _, hits) in enumerate(rows):
             cell_id = str(base_nodes.iloc[n].get("cell_id", n))
@@ -537,11 +474,13 @@ class NeighborTable(QtWidgets.QTableWidget):
                     item.setBackground(QtGui.QColor(255, 245, 180))
                 self.setItem(row_i, col_i, item)
 
-            for j, m in enumerate(MEASUREMENTS, start=3):
+            for j, m in enumerate(self.measurements, start=3):
                 d = pair_distance(blocks, m, node, n)
 
                 if m in hits:
                     rank, nd, xy = hits[m]
+                    if not np.isfinite(d):
+                        d = nd
                     txt = f"EDGE #{rank} d={d:.3g} xy={xy:.1f}"
                     item = QtWidgets.QTableWidgetItem(txt)
                     item.setBackground(QtGui.QColor(180, 255, 190))
@@ -592,10 +531,11 @@ class CollapsibleSection(QtWidgets.QWidget):
         self.content_layout.addWidget(widget)
 
 class ComponentFilterPanel(QtWidgets.QWidget):
-    def __init__(self, panes):
+    def __init__(self, panes, measurements):
         super().__init__()
 
         self.panes = panes
+        self.measurements = list(measurements)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -610,7 +550,7 @@ class ComponentFilterPanel(QtWidgets.QWidget):
         body_layout = QtWidgets.QVBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
 
-        for m in MEASUREMENTS:
+        for m in self.measurements:
             pane = panes[m]
 
             n_singletons = int((pane.component_size == 1).sum())
@@ -655,15 +595,177 @@ class ComponentFilterPanel(QtWidgets.QWidget):
         scroll.setWidget(body)
         layout.addWidget(scroll)
 
+class CoordinatePanel(QtWidgets.QWidget):
+    changed = QtCore.Signal(str, str, float)
+
+    def __init__(self, axis_names, presets):
+        super().__init__()
+
+        self.presets = presets
+        self.axis_names = list(axis_names)
+        self._syncing = False
+
+        self.mode = QtWidgets.QComboBox()
+        self.mode.addItems([*presets.keys(), "manual"])
+
+        self.x_axis = QtWidgets.QComboBox()
+        self.y_axis = QtWidgets.QComboBox()
+        self.x_axis.addItems(self.axis_names)
+        self.y_axis.addItems(self.axis_names)
+
+        self.y_scale = QtWidgets.QDoubleSpinBox()
+        self.y_scale.setRange(-1000000.0, 1000000.0)
+        self.y_scale.setDecimals(6)
+        self.y_scale.setSingleStep(0.1)
+        self.y_scale.setValue(-1.0)
+        self.y_scale.setKeyboardTracking(False)
+
+        layout = QtWidgets.QGridLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(QtWidgets.QLabel("coords"), 0, 0)
+        layout.addWidget(self.mode, 0, 1)
+        layout.addWidget(QtWidgets.QLabel("x"), 1, 0)
+        layout.addWidget(self.x_axis, 1, 1)
+        layout.addWidget(QtWidgets.QLabel("y"), 2, 0)
+        layout.addWidget(self.y_axis, 2, 1)
+        layout.addWidget(QtWidgets.QLabel("left coef"), 3, 0)
+        layout.addWidget(self.y_scale, 3, 1)
+
+        self.mode.currentTextChanged.connect(self._mode_changed)
+        self.x_axis.currentTextChanged.connect(self._manual_changed)
+        self.y_axis.currentTextChanged.connect(self._manual_changed)
+        self.y_scale.valueChanged.connect(self._manual_changed)
+
+        self._mode_changed(self.mode.currentText())
+
+    def _set_combo(self, box, value):
+        idx = box.findText(value)
+        if idx >= 0:
+            box.setCurrentIndex(idx)
+
+    def _mode_changed(self, mode):
+        if self._syncing:
+            return
+
+        self._syncing = True
+
+        if mode in self.presets:
+            x, y, inv = self.presets[mode]
+            self._set_combo(self.x_axis, x)
+            self._set_combo(self.y_axis, y)
+            self.y_scale.setValue(-1.0 if inv else 1.0)
+            self.x_axis.setEnabled(False)
+            self.y_axis.setEnabled(False)
+            self.y_scale.setEnabled(True)
+        else:
+            self.x_axis.setEnabled(True)
+            self.y_axis.setEnabled(True)
+            self.y_scale.setEnabled(True)
+
+        self._syncing = False
+        self._emit()
+
+    def _manual_changed(self, *args):
+        if self._syncing:
+            return
+
+        if self.mode.currentText() != "manual":
+            self._syncing = True
+            self._set_combo(self.mode, "manual")
+            self.x_axis.setEnabled(True)
+            self.y_axis.setEnabled(True)
+            self.y_scale.setEnabled(True)
+            self._syncing = False
+
+        self._emit()
+
+    def _emit(self):
+        self.changed.emit(
+            self.x_axis.currentText(),
+            self.y_axis.currentText(),
+            float(self.y_scale.value()),
+        )
+
+class MeasurementPanel(QtWidgets.QWidget):
+    changed = QtCore.Signal(list)
+
+    def __init__(self, measurements):
+        super().__init__()
+        self.boxes = {}
+        self.body_layout = None
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(QtWidgets.QLabel("measurements"))
+
+        buttons = QtWidgets.QHBoxLayout()
+        self.all_btn = QtWidgets.QPushButton("all")
+        self.core_btn = QtWidgets.QPushButton("core")
+        buttons.addWidget(self.all_btn)
+        buttons.addWidget(self.core_btn)
+        layout.addLayout(buttons)
+
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        body = QtWidgets.QWidget()
+        self.body_layout = QtWidgets.QVBoxLayout(body)
+        self.body_layout.setContentsMargins(0, 0, 0, 0)
+        scroll.setWidget(body)
+        layout.addWidget(scroll)
+
+        for m in measurements:
+            self.add_measurement(m, checked=True)
+
+        self.body_layout.addStretch(1)
+        self.all_btn.clicked.connect(self._all)
+        self.core_btn.clicked.connect(self._core)
+
+    def add_measurement(self, measurement, checked=True):
+        if measurement in self.boxes:
+            self.boxes[measurement].setChecked(checked)
+            return
+        cb = QtWidgets.QCheckBox(measurement)
+        cb.setChecked(bool(checked))
+        cb.toggled.connect(lambda _: self._emit())
+        self.boxes[measurement] = cb
+        stretch = self.body_layout.takeAt(self.body_layout.count() - 1) if self.body_layout.count() else None
+        self.body_layout.addWidget(cb)
+        if stretch is not None:
+            self.body_layout.addItem(stretch)
+
+    def visible(self):
+        return [m for m, cb in self.boxes.items() if cb.isChecked()]
+
+    def _emit(self):
+        self.changed.emit(self.visible())
+
+    def _all(self):
+        for cb in self.boxes.values():
+            cb.blockSignals(True)
+            cb.setChecked(True)
+            cb.blockSignals(False)
+        self._emit()
+
+    def _core(self):
+        keep = {"spatial", "expression", "morphology", "expr_morph", "expr_morph_spatial", "custom_mix"}
+        for m, cb in self.boxes.items():
+            cb.blockSignals(True)
+            cb.setChecked(m in keep)
+            cb.blockSignals(False)
+        self._emit()
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, out_dir: Path):
         super().__init__()
 
         self.out_dir = out_dir
-        self.nodes, self.edges = load_dump(out_dir)
+        self.measurements, self.nodes, self.edges = load_dump(out_dir)
+        self.base_measurement = "spatial" if "spatial" in self.nodes else self.measurements[0]
         self.neighbors = build_neighbors(self.edges)
-        self.blocks = distance_blocks(self.nodes["spatial"])
+        self.blocks = distance_blocks(self.nodes[self.base_measurement])
+        self.axis_values, self.presets = build_axis_space(self.nodes[self.base_measurement], out_dir)
+        self.selected_node_id = None
+        self.visible_measurements = list(self.measurements)
 
         self.setWindowTitle(f"Xenium graph inspector: {out_dir}")
 
@@ -671,39 +773,94 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(root)
 
         self.panes = {}
+        self.grid = QtWidgets.QGridLayout()
+        self.grid.setSpacing(2)
 
-        grid = QtWidgets.QGridLayout()
-        grid.setSpacing(2)
+        for m in self.measurements:
+            self._create_pane(m)
 
-        for i, m in enumerate(MEASUREMENTS):
-            pane = GraphPane(m, self.nodes[m], self.edges[m])
-            pane.nodeClicked.connect(self.select_node)
-            self.panes[m] = pane
-            grid.addWidget(pane, i // 2, i % 2)
+        self.coords = CoordinatePanel(self.axis_values.keys(), self.presets)
+        self.coords.changed.connect(self.set_axes)
 
-        master = self.panes["spatial"].plot
-        for m, pane in self.panes.items():
-            if m != "spatial":
-                pane.plot.setXLink(master)
-                pane.plot.setYLink(master)
+        self.measure_panel = MeasurementPanel(self.measurements)
+        self.measure_panel.changed.connect(self.set_visible_measurements)
 
         self.info = QtWidgets.QLabel("click a node")
-        self.table = NeighborTable()
-        self.filters = ComponentFilterPanel(self.panes)
+        self.table = NeighborTable(self.visible_measurements)
+        self.filters = ComponentFilterPanel(self.panes, self.measurements)
 
         side = QtWidgets.QVBoxLayout()
+        side.addWidget(self.coords)
+        side.addWidget(self.measure_panel, stretch=1)
         side.addWidget(self.info)
         side.addWidget(self.table, stretch=3)
         side.addWidget(self.filters, stretch=2)
 
         layout = QtWidgets.QHBoxLayout(root)
-        layout.addLayout(grid, stretch=4)
+        layout.addLayout(self.grid, stretch=4)
         layout.addLayout(side, stretch=2)
 
-        self.resize(1600, 900)
+        self._link_panes()
+        self._rebuild_grid()
+        self.resize(1750, 980)
+
+    def _create_pane(self, measurement):
+        pane = GraphPane(measurement, self.nodes[measurement], self.edges[measurement], self.axis_values)
+        pane.nodeClicked.connect(self.select_node)
+        self.panes[measurement] = pane
+        return pane
+
+    def _link_panes(self):
+        master = self.panes[self.base_measurement].plot
+        for m, pane in self.panes.items():
+            if m != self.base_measurement:
+                pane.plot.setXLink(master)
+                pane.plot.setYLink(master)
+
+    def _rebuild_grid(self):
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+
+        visible = [m for m in self.visible_measurements if m in self.panes]
+        for i, m in enumerate(visible):
+            pane = self.panes[m]
+            pane.setVisible(True)
+            self.grid.addWidget(pane, i // 2, i % 2)
+
+        for m, pane in self.panes.items():
+            if m not in visible:
+                pane.setVisible(False)
+
+        self.table.set_measurements(visible)
+        if self.selected_node_id is not None:
+            self.select_node(self.selected_node_id)
+
+    def set_visible_measurements(self, measurements):
+        measurements = [m for m in measurements if m in self.panes]
+        if not measurements:
+            measurements = [self.base_measurement]
+        self.visible_measurements = measurements
+        self._rebuild_grid()
+
+    def set_axes(self, x_axis, y_axis, y_scale):
+        if not x_axis or not y_axis:
+            return
+
+        for pane in self.panes.values():
+            pane.set_axes(x_axis, y_axis, y_scale)
+
+        if self.base_measurement in self.panes:
+            self.panes[self.base_measurement].plot.enableAutoRange()
+
+        if self.selected_node_id is not None:
+            self.select_node(self.selected_node_id)
 
     def select_node(self, node):
-        cell_id = self.nodes["spatial"].iloc[node].get("cell_id", node)
+        self.selected_node_id = int(node)
+        cell_id = self.nodes[self.base_measurement].iloc[node].get("cell_id", node)
 
         self.info.setText(f"node={node} cell_id={cell_id}")
 
@@ -714,18 +871,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.table.show_node(node, self.nodes, self.blocks, by_m)
 
-
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("dataset_id")
-    p.add_argument("--outputs", type=Path, default=Path("outputs"))
     args = p.parse_args()
 
     pg.setConfigOption("background", "w")
     pg.setConfigOption("foreground", "k")
     pg.setConfigOptions(antialias=False)
 
-    out_dir = args.outputs / args.dataset_id
+    out_dir = existing_out_dir(args.dataset_id)
 
     app = QtWidgets.QApplication([])
     app.setStyleSheet("""
@@ -749,7 +904,6 @@ def main():
     win = MainWindow(out_dir)
     win.show()
     app.exec()
-
 
 if __name__ == "__main__":
     main()
