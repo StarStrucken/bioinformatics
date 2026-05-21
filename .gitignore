@@ -29,7 +29,7 @@ logs/
 
 # Generated outputs
 outputs/*
-!outputs/bench_*_4.csv
+!outputs/bench_*.csv
 !outputs/tiny_human_ovary_nucexp_v4/
 outputs/tiny_human_ovary_nucexp_v4/*
 !outputs/tiny_human_ovary_nucexp_v4/*.json
