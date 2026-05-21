@@ -2,14 +2,14 @@
   "measurement": "seq_jaccard",
   "label": "seq_jaccard",
   "n_nodes": 632,
-  "n_edges": 2270,
+  "n_edges": 2262,
   "n_components": 1,
   "largest_component": 632,
   "singletons": 0,
   "neighbor_distance_median": 0.4390243902439024,
-  "neighbor_distance_max": 0.6938775510204082,
-  "neighbor_cutoff": null,
-  "raw_directed_edges": null,
-  "kept_directed_edges": null,
-  "pruned_directed_edges": null
+  "neighbor_distance_max": 0.6666666666666667,
+  "neighbor_cutoff": 0.6666666865348816,
+  "raw_directed_edges": 2270,
+  "kept_directed_edges": 2262,
+  "pruned_directed_edges": 8
 }

@@ -2,14 +2,14 @@
   "measurement": "seq_local",
   "label": "seq_local",
   "n_nodes": 632,
-  "n_edges": 1893,
+  "n_edges": 1891,
   "n_components": 1,
   "largest_component": 632,
   "singletons": 0,
   "neighbor_distance_median": 0.890625,
-  "neighbor_distance_max": 0.9230769230769231,
-  "neighbor_cutoff": null,
-  "raw_directed_edges": null,
-  "kept_directed_edges": null,
-  "pruned_directed_edges": null
+  "neighbor_distance_max": 0.921875,
+  "neighbor_cutoff": 0.921875,
+  "raw_directed_edges": 1893,
+  "kept_directed_edges": 1891,
+  "pruned_directed_edges": 2
 }

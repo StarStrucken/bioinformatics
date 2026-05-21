@@ -28,7 +28,7 @@ EXPRESSION_PCS = 30
 USE_NEIGHBOR_CUTOFF = True
 CUTOFF_QUANTILE = 0.995
 CUTOFF_MAD = 8.0
-MIN_EDGES_PER_NODE = 1
+MIN_EDGES_PER_NODE = 0
 TOP_GENES_PER_CELL = 32
 
 CELL_TABLE_NAMES = ("cells.csv.gz", "cells.csv", "cells.parquet")
@@ -233,6 +233,22 @@ def edges_from_pairs(nodes, blocks, measurement, pairs, k):
     edges = pd.DataFrame(rows, columns=["source", "target", "neighbor_distance"])
     edges = edges.sort_values("neighbor_distance").drop_duplicates(["source", "target"])
     edges = edges.sort_values(["source", "target"]).reset_index(drop=True)
+
+    cutoff = auto_neighbor_cutoff(
+        edges["neighbor_distance"].to_numpy(),
+        CUTOFF_QUANTILE,
+        CUTOFF_MAD,
+    ) if USE_NEIGHBOR_CUTOFF and len(edges) else np.inf
+
+    raw_edges = len(edges)
+
+    if USE_NEIGHBOR_CUTOFF and np.isfinite(cutoff):
+        edges = edges[edges["neighbor_distance"] <= cutoff].copy()
+
+    edges.attrs["neighbor_cutoff"] = float(cutoff)
+    edges.attrs["raw_directed_edges"] = raw_edges
+    edges.attrs["kept_directed_edges"] = len(edges)
+    edges.attrs["pruned_directed_edges"] = raw_edges - len(edges)
 
     return finish_edges(nodes, blocks, measurement, edges)
 
