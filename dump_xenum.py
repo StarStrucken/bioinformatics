@@ -9,7 +9,12 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 from scipy.sparse.csgraph import connected_components
+from sklearn.decomposition import TruncatedSVD, PCA
 from sklearn.neighbors import NearestNeighbors
+
+from xenum_common import zscore, parse_seq_ids, sequence_distance
+from xenum_measurements import MEASUREMENTS
+from xenum_paths import data_dir, out_dir as make_out_dir
 
 try:
     from tqdm.auto import tqdm
@@ -17,76 +22,59 @@ except Exception:
     def tqdm(x, **kwargs):
         return x
 
+K = 4
+EXPRESSION_PCS = 30
+
+USE_NEIGHBOR_CUTOFF = True
+CUTOFF_QUANTILE = 0.995
+CUTOFF_MAD = 8.0
+MIN_EDGES_PER_NODE = 0
+TOP_GENES_PER_CELL = 32
+
 CELL_TABLE_NAMES = ("cells.csv.gz", "cells.csv", "cells.parquet")
-DATA_ROOT = Path("data")
-OUTPUT_ROOT = Path("outputs")
 
-EDGE_MEASUREMENTS = {
-    "spatial": {
-        "label": "spatial:xy",
-        "weights": {"spatial": 1.0, "profile": 0.0, "morphology": 0.0, "align": 0.0},
-        "cutoff_quantile": 0.995,
-        "cutoff_mad": 8.0,
-    },
-    "profile": {
-        "label": "rna:summary",
-        "weights": {"spatial": 0.0, "profile": 1.0, "morphology": 0.0, "align": 0.0},
-        "cutoff_quantile": 0.98,
-        "cutoff_mad": 6.0,
-    },
-    "morphology": {
-        "label": "morphology:area",
-        "weights": {"spatial": 0.0, "profile": 0.0, "morphology": 1.0, "align": 0.0},
-        "cutoff_quantile": 0.98,
-        "cutoff_mad": 6.0,
-    },
-    "align": {
-        "label": "align:top_genes",
-        "weights": {"spatial": 0.0, "profile": 0.0, "morphology": 0.0, "align": 1.0},
-        "cutoff_quantile": 0.98,
-        "cutoff_mad": 6.0,
-        "seq_len": 15,
-        "candidate_k": 80,
-        "exact_pairwise": False,
-        "insert_cost": 1.0,
-        "delete_cost": 1.0,
-        "substitute_cost": 2.0,
-    },
-    "mix_nonspatial": {
-        "label": "mix:nonspatial",
-        "weights": {"spatial": 0.0, "profile": 0.35, "morphology": 0.50, "align": 0.75},
-        "cutoff_quantile": 0.99,
-        "cutoff_mad": 8.0,
-        "candidate_k": 80,
-        "exact_pairwise": False,
-    },
-    "mix": {
-        "label": "mix:full+spatial",
-        "weights": {"spatial": 1.0, "profile": 0.35, "morphology": 0.50, "align": 0.75},
-        "cutoff_quantile": 0.99,
-        "cutoff_mad": 8.0,
-        "candidate_k": 80,
-        "exact_pairwise": False,
-    },
-}
+NODE_BASE_COLS = [
+    "cell_id",
+    "x_centroid",
+    "y_centroid",
+    "x_norm",
+    "y_norm",
+    "log_total_counts",
+    "log_detected_genes",
+    "cell_area",
+    "nucleus_area",
+    "nucleus_cell_ratio",
+]
 
+EDGE_COLS = [
+    "measurement",
+    "source",
+    "target",
+    "neighbor_distance",
+    "xy_distance",
+    "expression_distance",
+    "morphology_distance",
+    "source_cell_id",
+    "target_cell_id",
+    "source_component_id",
+    "target_component_id",
+    "source_component_size",
+    "target_component_size",
+    "same_component",
+]
 
 def find_file(root: Path, names: tuple[str, ...]) -> Path:
     roots = [root] if root.name == "bundle" else [root, root / "bundle"]
-
     for base in roots:
         for name in names:
-            path = base / name
-            if path.exists():
-                return path
-
+            p = base / name
+            if p.exists():
+                return p
     for base in roots:
         for name in names:
-            for path in base.rglob(name):
-                return path
-
+            for p in base.rglob(name):
+                return p
     raise FileNotFoundError(names)
-
 
 def read_cells(xenium_dir: Path):
     path = find_file(xenium_dir, CELL_TABLE_NAMES)
@@ -94,1334 +82,363 @@ def read_cells(xenium_dir: Path):
     cells["cell_id"] = cells["cell_id"].astype(str)
     return cells.drop_duplicates("cell_id").set_index("cell_id"), path
 
-
 def load_xenium(xenium_dir: Path):
     import scanpy as sc
-
     matrix_path = find_file(xenium_dir, ("cell_feature_matrix.h5",))
     adata = sc.read_10x_h5(matrix_path, gex_only=False)
     adata.var_names_make_unique()
     adata.obs_names = adata.obs_names.astype(str)
-
     if "feature_types" in adata.var.columns:
-        mask = adata.var["feature_types"].astype(str).eq("Gene Expression")
-        adata = adata[:, mask].copy()
-
+        adata = adata[:, adata.var["feature_types"].astype(str).eq("Gene Expression")].copy()
     cells, cells_path = read_cells(xenium_dir)
     ids = adata.obs_names.intersection(cells.index)
-
     adata = adata[ids].copy()
     cells = cells.loc[adata.obs_names]
-
     coords = cells[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
-
     adata.obsm["spatial"] = coords
     adata.obs["cell_id"] = adata.obs_names.astype(str)
     adata.obs["x_centroid"] = coords[:, 0]
     adata.obs["y_centroid"] = coords[:, 1]
-    adata.obs["cell_area"] = cells["cell_area"].to_numpy() if "cell_area" in cells else 0.0
-    adata.obs["nucleus_area"] = cells["nucleus_area"].to_numpy() if "nucleus_area" in cells else 0.0
-
-    adata.uns["xenium_dump"] = {
-        "xenium_dir": str(xenium_dir),
-        "matrix_path": str(matrix_path),
-        "cells_path": str(cells_path),
-    }
+    adata.obs["cell_area"] = cells["cell_area"].to_numpy(dtype=np.float32) if "cell_area" in cells else np.zeros(adata.n_obs, dtype=np.float32)
+    adata.obs["nucleus_area"] = cells["nucleus_area"].to_numpy(dtype=np.float32) if "nucleus_area" in cells else np.zeros(adata.n_obs, dtype=np.float32)
+    adata.uns["xenium_clean"] = {"xenium_dir": str(xenium_dir), "matrix_path": str(matrix_path), "cells_path": str(cells_path)}
     return adata
 
-def clean_float(x, default=0.0):
+def clean_float(x):
     x = np.asarray(x, dtype=np.float32)
-    return np.nan_to_num(x, nan=default, posinf=default, neginf=default)
-
-def zscore(x):
-    x = np.asarray(x, dtype=np.float32)
-
-    if x.ndim == 1:
-        x = x[:, None]
-
-    ok = np.isfinite(x)
-    counts = ok.sum(axis=0)
-
-    sums = np.where(ok, x, 0.0).sum(axis=0)
-    mean = sums / np.maximum(counts, 1)
-
-    x = np.where(ok, x, mean)
-
-    std = x.std(axis=0)
-    z = (x - mean) / (std + 1e-6)
-
-    return np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
-
-def knn_labels(coords: np.ndarray, k: int) -> np.ndarray:
-    if coords.shape[0] < 2:
-        return np.zeros(coords.shape[0], dtype=np.int32)
-
-    kk = min(k, coords.shape[0] - 1)
-    graph = NearestNeighbors(n_neighbors=kk + 1).fit(coords).kneighbors_graph(coords)
-    graph = graph.maximum(graph.T)
-
-    _, labels = connected_components(graph, directed=False)
-    return labels.astype(np.int32)
-
-
-def rough_grid(coords: np.ndarray, max_cells: int):
-    tile_target = max(max_cells // 64, 1)
-    n_tiles = int(np.ceil(coords.shape[0] / tile_target))
-
-    span = np.ptp(coords, axis=0)
-    aspect = max(float(span[0] / (span[1] + 1e-6)), 1e-6)
-
-    nx = max(1, int(np.ceil(np.sqrt(n_tiles * aspect))))
-    ny = max(1, int(np.ceil(n_tiles / nx)))
-
-    low = coords.min(axis=0)
-
-    x = np.clip(
-        ((coords[:, 0] - low[0]) / (span[0] + 1e-6) * nx).astype(int),
-        0,
-        nx - 1,
-    )
-    y = np.clip(
-        ((coords[:, 1] - low[1]) / (span[1] + 1e-6) * ny).astype(int),
-        0,
-        ny - 1,
-    )
-
-    code = y * nx + x
-    counts = np.bincount(code, minlength=nx * ny)
-
-    seed = int(counts.argmax())
-    sx, sy = seed % nx, seed // nx
-
-    nonempty = np.flatnonzero(counts)
-    tx, ty = nonempty % nx, nonempty // nx
-
-    order = nonempty[np.argsort((tx - sx) ** 2 + (ty - sy) ** 2)]
-
-    picked = []
-    total = 0
-
-    for c in order:
-        picked.append(int(c))
-        total += int(counts[c])
-        if total >= max_cells:
-            break
-
-    picked = set(picked)
-    padded = set(picked)
-
-    for c in picked:
-        cx, cy = c % nx, c // nx
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                xx, yy = cx + dx, cy + dy
-                if 0 <= xx < nx and 0 <= yy < ny:
-                    padded.add(yy * nx + xx)
-
-    core = np.flatnonzero(np.isin(code, list(picked)))
-    candidate = np.flatnonzero(np.isin(code, list(padded)))
-
-    return core, candidate
-
-
-def select_cells(adata, max_cells: int, k: int):
-    coords = np.asarray(adata.obsm["spatial"], dtype=np.float32)
-
-    if adata.n_obs <= max_cells:
-        out = adata.copy()
-        out.obs["island_id"] = knn_labels(coords, k)
-        out.uns["crop_mode"] = "all"
-        return out
-
-    core, candidate = rough_grid(coords, max_cells)
-
-    sub_coords = coords[candidate]
-    labels = knn_labels(sub_coords, k)
-
-    core_mask = np.zeros(adata.n_obs, dtype=bool)
-    core_mask[core] = True
-
-    core_labels = labels[core_mask[candidate]]
-    seed = coords[core].mean(axis=0)
-
-    selected_local = []
-    total = 0
-
-    for label in pd.Series(core_labels).value_counts().index:
-        local = np.flatnonzero(labels == label)
-
-        if total and total + local.size > max_cells:
-            continue
-
-        selected_local.append(local)
-        total += local.size
-
-        if total >= max_cells * 0.85:
-            break
-
-    selected_local = (
-        np.concatenate(selected_local)
-        if selected_local
-        else np.array([], dtype=np.int64)
-    )
-
-    if selected_local.size == 0 or selected_local.size > max_cells:
-        d = np.linalg.norm(sub_coords - seed, axis=1)
-        selected_local = np.argsort(d)[:max_cells]
-
-    selected = candidate[selected_local]
-
-    out = adata[selected].copy()
-    _, island_id = np.unique(labels[selected_local], return_inverse=True)
-
-    out.obs["island_id"] = island_id.astype(np.int32)
-    out.uns["crop_mode"] = "grid_knn"
-    out.uns["max_cells"] = int(max_cells)
-
-    return out
-
+    return np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
 
 def per_cell_counts(x):
     total = np.asarray(x.sum(axis=1)).ravel().astype(np.float32)
-    total = np.nan_to_num(total, nan=0.0, posinf=0.0, neginf=0.0)
+    detected = np.asarray(x.getnnz(axis=1) if sp.issparse(x) else (x > 0).sum(axis=1)).ravel().astype(np.float32)
+    return clean_float(total), clean_float(detected)
 
-    detected = np.asarray(
-        x.getnnz(axis=1) if sp.issparse(x) else (x > 0).sum(axis=1)
-    ).ravel()
+def top_gene_ids(x, n=32):
+    out = []
+    x = x.tocsr() if sp.issparse(x) else np.asarray(x)
 
-    detected = np.nan_to_num(detected, nan=0.0, posinf=0.0, neginf=0.0)
-
-    return total.astype(np.float32), detected.astype(np.int32)
-
-def top_gene_sequences(adata, n: int = 25):
-    names = np.asarray(adata.var_names.astype(str))
-    x = adata.X
-
-    out_ids = []
-    out_names = []
-
-    for i in tqdm(range(adata.n_obs), desc="top genes", leave=False):
-        if sp.issparse(x):
-            row = x.getrow(i)
+    for i in range(x.shape[0]):
+        row = x.getrow(i) if sp.issparse(x) else x[i]
+        if sp.issparse(row):
             idx = row.indices
             val = row.data
         else:
-            row = np.asarray(x[i]).ravel()
-            idx = np.flatnonzero(row > 0)
+            idx = np.flatnonzero(row)
             val = row[idx]
 
-        if idx.size == 0:
-            out_ids.append("")
-            out_names.append("")
+        if len(idx) == 0:
+            out.append("")
             continue
 
-        if idx.size > n:
-            pick = np.argpartition(val, -n)[-n:]
-            idx = idx[pick]
-            val = val[pick]
+        take = np.argsort(-val)[:n]
+        out.append(" ".join(str(int(v)) for v in idx[take]))
 
-        order = np.lexsort((idx, -val))
-        idx = idx[order]
+    return out
 
-        out_ids.append(" ".join(map(str, idx.tolist())))
-        out_names.append("|".join(names[idx].tolist()))
+def log_norm_matrix(x, target_sum=10000.0):
+    total = np.asarray(x.sum(axis=1)).ravel().astype(np.float32)
+    scale = target_sum / np.maximum(total, 1.0)
+    if sp.issparse(x):
+        out = x.tocsr(copy=True).astype(np.float32)
+        out = out.multiply(scale[:, None]).tocsr()
+        out.data = np.log1p(out.data)
+        return out
+    out = np.asarray(x, dtype=np.float32) * scale[:, None]
+    return np.log1p(out)
 
-    return out_ids, out_names
+def expression_pcs(adata, n_pcs: int):
+    x = log_norm_matrix(adata.X)
+    n = min(int(n_pcs), max(1, adata.n_obs - 1), max(1, adata.n_vars - 1))
+    if sp.issparse(x):
+        emb = TruncatedSVD(n_components=n, random_state=0).fit_transform(x)
+    else:
+        emb = PCA(n_components=n, random_state=0).fit_transform(x)
+    return zscore(emb)
 
-
-def parse_seq_ids(x):
-    if x is None or pd.isna(x):
-        return ()
-
-    s = str(x).strip()
-
-    if not s:
-        return ()
-
-    return tuple(int(v) for v in s.split())
-
-
-def edit_distance(a, b, insert_cost=1.0, delete_cost=1.0, substitute_cost=2.0):
-    if a == b:
-        return 0.0
-
-    if not a:
-        return len(b) * insert_cost
-
-    if not b:
-        return len(a) * delete_cost
-
-    prev = np.arange(len(b) + 1, dtype=np.float32) * insert_cost
-
-    for i, ca in enumerate(a, start=1):
-        curr = np.empty(len(b) + 1, dtype=np.float32)
-        curr[0] = i * delete_cost
-
-        for j, cb in enumerate(b, start=1):
-            sub = 0.0 if ca == cb else substitute_cost
-            curr[j] = min(
-                prev[j] + delete_cost,
-                curr[j - 1] + insert_cost,
-                prev[j - 1] + sub,
-            )
-
-        prev = curr
-
-    return float(prev[-1])
-
-
-def normalized_edit_distance(a, b):
-    cfg = EDGE_MEASUREMENTS["align"]
-
-    d = edit_distance(
-        a,
-        b,
-        cfg["insert_cost"],
-        cfg["delete_cost"],
-        cfg["substitute_cost"],
-    )
-
-    return d / max(len(a), len(b), 1)
-
-
-def node_sequences(nodes: pd.DataFrame):
-    return [parse_seq_ids(v) for v in nodes["top_gene_ids"].to_numpy()]
-
-
-def pair_align_distance(seqs, src, dst):
-    return np.asarray(
-        [normalized_edit_distance(seqs[int(s)], seqs[int(t)]) for s, t in zip(src, dst)],
-        dtype=np.float32,
-    )
-
-def make_nodes(adata) -> pd.DataFrame:
+def make_nodes(adata):
     total, detected = per_cell_counts(adata.X)
-
     coords = np.asarray(adata.obsm["spatial"], dtype=np.float32)
     low = coords.min(axis=0)
-    high = coords.max(axis=0)
-    span = high - low + 1e-6
-
-    centered = coords - coords.mean(axis=0)
-    aligned = (coords - low) / span
-
-    island = adata.obs["island_id"].to_numpy(dtype=np.int32)
-    island_size = pd.Series(island).map(pd.Series(island).value_counts()).to_numpy(dtype=np.int32)
-
+    span = np.ptp(coords, axis=0) + 1e-6
+    norm = (coords - low) / span
     cell_area = clean_float(adata.obs["cell_area"].to_numpy(dtype=np.float32))
     nucleus_area = clean_float(adata.obs["nucleus_area"].to_numpy(dtype=np.float32))
+    ratio = np.divide(nucleus_area, cell_area, out=np.zeros_like(nucleus_area), where=cell_area > 0)
+    return pd.DataFrame({
+        "cell_id": adata.obs["cell_id"].to_numpy(dtype=str),
+        "x_centroid": coords[:, 0],
+        "y_centroid": coords[:, 1],
+        "x_norm": norm[:, 0],
+        "y_norm": norm[:, 1],
+        "log_total_counts": np.log1p(total),
+        "log_detected_genes": np.log1p(detected),
+        "cell_area": cell_area,
+        "nucleus_area": nucleus_area,
+        "nucleus_cell_ratio": clean_float(ratio),
+    })
 
-    nucleus_cell_ratio = np.divide(
-        nucleus_area,
-        cell_area,
-        out=np.zeros_like(nucleus_area, dtype=np.float32),
-        where=cell_area > 0,
-    )
-    nucleus_cell_ratio = clean_float(nucleus_cell_ratio)
+def make_pairs_all_pairs(nodes, blocks, measurement):
+    n = len(nodes)
+    emb = block_embedding(blocks, measurement)
+    rows = []
 
-    seq_ids, seq_names = top_gene_sequences(
-        adata,
-        EDGE_MEASUREMENTS["align"]["seq_len"],
-    )
+    for i in tqdm(range(n), desc=f"pairs {measurement}"):
+        d = np.linalg.norm(emb[i + 1:] - emb[i], axis=1)
+        for off, dist in enumerate(d, start=i + 1):
+            rows.append((i, off, float(dist)))
 
-    return pd.DataFrame(
-        {
-            "node_index": np.arange(adata.n_obs, dtype=np.int64),
-            "cell_id": adata.obs["cell_id"].to_numpy(dtype=str),
+    return pd.DataFrame(rows, columns=["source", "target", "distance"])
 
-            "x_centroid": coords[:, 0],
-            "y_centroid": coords[:, 1],
-            "x_centered": centered[:, 0],
-            "y_centered": centered[:, 1],
-            "x_aligned": aligned[:, 0],
-            "y_aligned": aligned[:, 1],
+def make_pairs_sequence_all_pairs(nodes, measurement):
+    seqs = [parse_seq_ids(v) for v in nodes["top_gene_ids"].to_numpy()]
+    rows = []
 
-            "spatial_island_id": island,
-            "spatial_island_size": island_size,
-            "island_id": island,
-            "island_size": island_size,
+    for i in tqdm(range(len(seqs)), desc=f"pairs {measurement}"):
+        for j in range(i + 1, len(seqs)):
+            d = sequence_distance(seqs[i], seqs[j], measurement)
+            rows.append((i, j, float(d)))
 
-            "total_counts": total,
-            "log_total_counts": np.log1p(total),
-            "n_detected_genes": detected,
-            "log_detected_genes": np.log1p(detected),
-            "top_gene_ids": seq_ids,
-            "top_genes": seq_names,
+    return pd.DataFrame(rows, columns=["source", "target", "distance"])
 
-            "cell_area": cell_area,
-            "nucleus_area": nucleus_area,
-            "nucleus_cell_ratio": nucleus_cell_ratio,
-        }
-    )
+def load_or_make_pairs(out_dir, nodes, blocks, measurement):
+    path = out_dir / f"pairs_{measurement}.parquet"
 
-def edge_blocks(nodes: pd.DataFrame):
+    if path.exists():
+        return pd.read_parquet(path)
+
+    if measurement.startswith("seq_"):
+        pairs = make_pairs_sequence_all_pairs(nodes, measurement)
+    else:
+        pairs = make_pairs_all_pairs(nodes, blocks, measurement)
+
+    pairs.to_parquet(path, index=False)
+    return pairs
+
+def edges_from_pairs(nodes, blocks, measurement, pairs, k):
+    best = [[] for _ in range(len(nodes))]
+
+    for r in pairs.itertuples(index=False):
+        a = int(r.source)
+        b = int(r.target)
+        d = float(r.distance)
+        best[a].append((b, d))
+        best[b].append((a, d))
+
+    rows = []
+    for i, vals in enumerate(best):
+        vals.sort(key=lambda x: x[1])
+        for j, d in vals[:k]:
+            rows.append((min(i, j), max(i, j), d))
+
+    edges = pd.DataFrame(rows, columns=["source", "target", "neighbor_distance"])
+    edges = edges.sort_values("neighbor_distance").drop_duplicates(["source", "target"])
+    edges = edges.sort_values(["source", "target"]).reset_index(drop=True)
+
+    cutoff = auto_neighbor_cutoff(
+        edges["neighbor_distance"].to_numpy(),
+        CUTOFF_QUANTILE,
+        CUTOFF_MAD,
+    ) if USE_NEIGHBOR_CUTOFF and len(edges) else np.inf
+
+    raw_edges = len(edges)
+
+    if USE_NEIGHBOR_CUTOFF and np.isfinite(cutoff):
+        edges = edges[edges["neighbor_distance"] <= cutoff].copy()
+
+    edges.attrs["neighbor_cutoff"] = float(cutoff)
+    edges.attrs["raw_directed_edges"] = raw_edges
+    edges.attrs["kept_directed_edges"] = len(edges)
+    edges.attrs["pruned_directed_edges"] = raw_edges - len(edges)
+
+    return finish_edges(nodes, blocks, measurement, edges)
+
+def build_blocks(adata, nodes, n_pcs):
     spatial = zscore(nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32))
+    morphology = zscore(nodes[["cell_area", "nucleus_area", "nucleus_cell_ratio"]].to_numpy(dtype=np.float32))
+    expression = expression_pcs(adata, n_pcs)
+    return {"spatial": spatial, "expression": expression, "morphology": morphology}
 
-    profile = zscore(
-        nodes[
-            [
-                "log_total_counts",
-                "log_detected_genes",
-            ]
-        ].to_numpy(dtype=np.float32)
-    )
-
-    morphology = zscore(
-        nodes[
-            [
-                "cell_area",
-                "nucleus_area",
-                "nucleus_cell_ratio",
-            ]
-        ].to_numpy(dtype=np.float32)
-    )
-
-    return {
-        "spatial": spatial,
-        "profile": profile,
-        "morphology": morphology,
-    }
-
-
-def edge_embedding(blocks: dict[str, np.ndarray], measurement: str) -> np.ndarray:
-    weights = EDGE_MEASUREMENTS[measurement]["weights"]
-    parts = [
-        blocks[name] * weight
-        for name, weight in weights.items()
-        if weight > 0 and name in blocks
-    ]
-
-    if not parts:
-        raise ValueError(f"no vector embedding for {measurement}")
-
+def block_embedding(blocks, measurement):
+    parts = []
+    for name, weight in MEASUREMENTS[measurement]["blocks"].items():
+        parts.append(blocks[name] * float(weight))
     return np.concatenate(parts, axis=1) if len(parts) > 1 else parts[0]
 
-
-def pair_block_distance(block: np.ndarray, src: np.ndarray, dst: np.ndarray) -> np.ndarray:
+def pair_distance(block, src, dst):
     return np.linalg.norm(block[dst] - block[src], axis=1).astype(np.float32)
 
-def graph_components(n: int, edges: pd.DataFrame):
+def components(n, edges):
     if n == 0:
         return np.array([], dtype=np.int32), np.array([], dtype=np.int32)
-
     if edges.empty:
         labels = np.arange(n, dtype=np.int32)
-        sizes = np.ones(n, dtype=np.int32)
-        return labels, sizes
-
-    row = edges["source"].to_numpy(dtype=np.int64)
-    col = edges["target"].to_numpy(dtype=np.int64)
-
-    data = np.ones(row.size * 2, dtype=np.int8)
-    graph = sp.csr_matrix(
-        (
-            data,
-            (
-                np.r_[row, col],
-                np.r_[col, row],
-            ),
-        ),
-        shape=(n, n),
-    )
-
+        return labels, np.ones(n, dtype=np.int32)
+    src = edges["source"].to_numpy(dtype=np.int64)
+    dst = edges["target"].to_numpy(dtype=np.int64)
+    data = np.ones(src.size * 2, dtype=np.int8)
+    graph = sp.csr_matrix((data, (np.r_[src, dst], np.r_[dst, src])), shape=(n, n))
     _, labels = connected_components(graph, directed=False)
     labels = labels.astype(np.int32)
-
     sizes = pd.Series(labels).map(pd.Series(labels).value_counts()).to_numpy(dtype=np.int32)
-
     return labels, sizes
 
-
-def nodes_for_graph(nodes: pd.DataFrame, edges: pd.DataFrame) -> pd.DataFrame:
-    out = nodes.copy()
-
-    labels, sizes = graph_components(nodes.shape[0], edges)
-
-    out["component_id"] = labels
-    out["component_size"] = sizes
-
-    out["graph_island_id"] = labels
-    out["graph_island_size"] = sizes
-
-    return out
-
-
-def add_graph_components_to_edges(edges: pd.DataFrame, graph_nodes: pd.DataFrame) -> pd.DataFrame:
-    if edges.empty:
-        edges = edges.copy()
-        edges["source_component_id"] = []
-        edges["target_component_id"] = []
-        edges["source_component_size"] = []
-        edges["target_component_size"] = []
-        edges["same_component"] = []
-        return edges
-
-    edges = edges.copy()
-
-    src = edges["source"].to_numpy(dtype=np.int64)
-    dst = edges["target"].to_numpy(dtype=np.int64)
-
-    component_id = graph_nodes["component_id"].to_numpy(dtype=np.int32)
-    component_size = graph_nodes["component_size"].to_numpy(dtype=np.int32)
-
-    edges["source_component_id"] = component_id[src]
-    edges["target_component_id"] = component_id[dst]
-    edges["source_component_size"] = component_size[src]
-    edges["target_component_size"] = component_size[dst]
-    edges["same_component"] = (
-        edges["source_component_id"].to_numpy()
-        == edges["target_component_id"].to_numpy()
-    ).astype(np.int8)
-
-    return edges
-
-def graph_checks(
-    nodes: pd.DataFrame,
-    graph_nodes: pd.DataFrame,
-    edges: pd.DataFrame,
-    measurement: str,
-) -> dict:
-    n = int(nodes.shape[0])
-    m = int(edges.shape[0])
-
-    out = {
-        "measurement": measurement,
-        "label": EDGE_MEASUREMENTS[measurement]["label"],
-
-        "n_nodes": n,
-        "n_edges": m,
-
-        "n_components": int(graph_nodes["component_id"].nunique()) if n else 0,
-        "largest_component": int(graph_nodes["component_size"].max()) if n else 0,
-        "singletons": int((graph_nodes["component_size"] == 1).sum()) if n else 0,
-
-        "neighbor_cutoff": edges.attrs.get("neighbor_cutoff"),
-        "candidate_directed_edges": edges.attrs.get("candidate_directed_edges"),
-        "raw_candidate_directed_edges": edges.attrs.get("raw_candidate_directed_edges"),
-        "self_loop_candidates": edges.attrs.get("self_loop_candidates", 0),
-        "kept_directed_edges": edges.attrs.get("kept_directed_edges"),
-        "pruned_directed_edges": edges.attrs.get("pruned_directed_edges"),
-        "duplicated_undirected_edges": edges.attrs.get("duplicated_undirected_edges", 0),
-    }
-
-    if m == 0:
-        out.update(
-            {
-                "bad_self_loops": 0,
-                "bad_node_index": 0,
-                "duplicated_edges_after_write": 0,
-                "same_component_mean": None,
-                "same_spatial_island_mean": None,
-                "distance_median": None,
-                "distance_max": None,
-                "neighbor_distance_median": None,
-                "neighbor_distance_max": None,
-            }
-        )
-        return out
-
-    src = edges["source"].to_numpy(dtype=np.int64)
-    dst = edges["target"].to_numpy(dtype=np.int64)
-
-    out["bad_self_loops"] = int((src == dst).sum())
-    out["bad_node_index"] = int(((src < 0) | (dst < 0) | (src >= n) | (dst >= n)).sum())
-    out["duplicated_edges_after_write"] = int(edges.duplicated(["source", "target"]).sum())
-
-    if "same_component" in edges:
-        out["same_component_mean"] = float(edges["same_component"].mean())
-    else:
-        out["same_component_mean"] = None
-
-    if "same_spatial_island" in edges:
-        out["same_spatial_island_mean"] = float(edges["same_spatial_island"].mean())
-    else:
-        out["same_spatial_island_mean"] = None
-
-    out["distance_median"] = float(edges["distance"].median())
-    out["distance_max"] = float(edges["distance"].max())
-    out["neighbor_distance_median"] = float(edges["neighbor_distance"].median())
-    out["neighbor_distance_max"] = float(edges["neighbor_distance"].max())
-
-    return out
-
-
-def print_graph_checks(checks: dict):
-    bad = []
-
-    if checks["bad_self_loops"]:
-        bad.append(f"self_loops={checks['bad_self_loops']}")
-
-    if checks["bad_node_index"]:
-        bad.append(f"bad_node_index={checks['bad_node_index']}")
-
-    if checks["duplicated_edges_after_write"]:
-        bad.append(f"duplicated_edges={checks['duplicated_edges_after_write']}")
-
-    if checks["same_component_mean"] is not None and checks["same_component_mean"] < 1.0:
-        bad.append(f"same_component_mean={checks['same_component_mean']:.4f}")
-
-    msg = (
-        f"{checks['measurement']}: "
-        f"nodes={checks['n_nodes']} "
-        f"edges={checks['n_edges']} "
-        f"components={checks['n_components']} "
-        f"largest={checks['largest_component']} "
-        f"singletons={checks['singletons']} "
-        f"pruned={checks.get('pruned_directed_edges')} "
-        f"self_candidates={checks.get('self_loop_candidates')}"
-    )
-
-    if bad:
-        print("CHECK WARNING:", msg, "|", ", ".join(bad))
-    else:
-        print("CHECK OK:", msg)
-
-def auto_neighbor_cutoff(values: np.ndarray, measurement: str) -> float:
+def auto_neighbor_cutoff(values: np.ndarray, quantile=0.995, mad_scale=8.0):
     values = np.asarray(values, dtype=np.float32)
     values = values[np.isfinite(values)]
     values = values[values > 0]
-
     if values.size < 10:
         return np.inf
-
-    cfg = EDGE_MEASUREMENTS[measurement]
-
-    if cfg.get("max_neighbor_distance") is not None:
-        return float(cfg["max_neighbor_distance"])
-
-    q = float(cfg.get("cutoff_quantile", 0.98))
-    mad_scale = float(cfg.get("cutoff_mad", 6.0))
-
-    quantile_cutoff = float(np.quantile(values, q))
-
+    q_cut = float(np.quantile(values, float(quantile)))
     med = float(np.median(values))
     mad = float(np.median(np.abs(values - med)))
-
     if mad < 1e-6:
-        return quantile_cutoff
+        return q_cut
+    mad_cut = med + float(mad_scale) * 1.4826 * mad
+    out = min(q_cut, mad_cut)
+    return float(out) if np.isfinite(out) and out > 0 else np.inf
 
-    mad_cutoff = med + mad_scale * 1.4826 * mad
+def soft_prune_knn(src, dst, nd, cutoff, min_edges_per_node=1):
+    keep = nd <= cutoff
+    if min_edges_per_node <= 0 or src.size == 0:
+        return keep
+    order = np.lexsort((nd, src))
+    seen = {}
+    for i in order:
+        s = int(src[i])
+        c = seen.get(s, 0)
+        if c < min_edges_per_node:
+            keep[i] = True
+            seen[s] = c + 1
+    return keep
 
-    cutoff = min(quantile_cutoff, mad_cutoff)
+def finish_edges(nodes, blocks, measurement, edges):
+    labels, sizes = components(len(nodes), edges)
 
-    if not np.isfinite(cutoff) or cutoff <= 0:
-        return np.inf
-
-    return float(cutoff)
-
-def candidate_embedding(blocks: dict[str, np.ndarray], measurement: str) -> np.ndarray:
-    weights = EDGE_MEASUREMENTS[measurement]["weights"]
-
-    if measurement == "align":
-        return blocks["profile"]
-
-    parts = []
-
-    for name in ["spatial", "profile", "morphology"]:
-        w = float(weights.get(name, 0.0))
-        if w > 0:
-            parts.append(blocks[name] * w)
-
-    if not parts:
-        return blocks["profile"]
-
-    return np.concatenate(parts, axis=1) if len(parts) > 1 else parts[0]
-
-
-def score_candidates(blocks, seqs, i: int, candidates: np.ndarray, measurement: str):
-    weights = EDGE_MEASUREMENTS[measurement]["weights"]
-    score2 = np.zeros(candidates.size, dtype=np.float32)
-
-    for name in ["spatial", "profile", "morphology"]:
-        w = float(weights.get(name, 0.0))
-
-        if w <= 0:
-            continue
-
-        d = np.linalg.norm(blocks[name][candidates] - blocks[name][i], axis=1).astype(np.float32)
-        score2 += (w * d) ** 2
-
-    w_align = float(weights.get("align", 0.0))
-
-    if w_align > 0:
-        a = seqs[i]
-        d = np.asarray(
-            [normalized_edit_distance(a, seqs[int(j)]) for j in candidates],
-            dtype=np.float32,
-        )
-        score2 += (w_align * d) ** 2
-
-    return np.sqrt(score2).astype(np.float32)
-
-
-def pairwise_neighbors(nodes, blocks, k: int, measurement: str):
-    n = nodes.shape[0]
-    kk = min(k, n - 1)
-
-    cfg = EDGE_MEASUREMENTS[measurement]
-    exact = bool(cfg.get("exact_pairwise", False))
-    candidate_k = min(int(cfg.get("candidate_k", 80)), n - 1)
-
-    seqs = node_sequences(nodes)
-
-    if exact:
-        candidate_idx = None
-    else:
-        emb = candidate_embedding(blocks, measurement)
-        emb = np.nan_to_num(emb, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
-
-        _, candidate_idx = (
-            NearestNeighbors(n_neighbors=candidate_k + 1, algorithm="kd_tree")
-            .fit(emb)
-            .kneighbors(emb)
-        )
-
-    sources = []
-    targets = []
-    distances = []
-
-    for i in tqdm(range(n), desc=f"{measurement} candidates", leave=False):
-        if exact:
-            candidates = np.arange(n, dtype=np.int64)
-            candidates = candidates[candidates != i]
-        else:
-            candidates = candidate_idx[i].astype(np.int64)
-            candidates = candidates[candidates != i]
-            candidates = np.unique(candidates)
-
-        if candidates.size == 0:
-            continue
-
-        score = score_candidates(blocks, seqs, i, candidates, measurement)
-
-        take = min(kk, candidates.size)
-
-        if take >= candidates.size:
-            order = np.argsort(score)
-        else:
-            order = np.argpartition(score, take)[:take]
-            order = order[np.argsort(score[order])]
-
-        picked = candidates[order]
-
-        sources.append(np.full(picked.size, i, dtype=np.int64))
-        targets.append(picked.astype(np.int64))
-        distances.append(score[order].astype(np.float32))
-
-    source = np.concatenate(sources) if sources else np.array([], dtype=np.int64)
-    target = np.concatenate(targets) if targets else np.array([], dtype=np.int64)
-    distance = np.concatenate(distances) if distances else np.array([], dtype=np.float32)
-
-    return source, target, distance
-
-def make_edges(
-    nodes: pd.DataFrame,
-    blocks: dict[str, np.ndarray],
-    k: int,
-    measurement: str,
-) -> pd.DataFrame:
-    n = nodes.shape[0]
-
-    cols = [
-        "measurement",
-        "source",
-        "target",
-        "source_cell_id",
-        "target_cell_id",
-
-        "distance",
-        "neighbor_distance",
-        "spatial_scaled_distance",
-        "profile_distance",
-        "morphology_distance",
-        "align_distance",
-        "combo_distance",
-
-        "dx",
-        "dy",
-        "abs_dx",
-        "abs_dy",
-        "angle",
-        "direction_x",
-        "direction_y",
-
-        "same_spatial_island",
-
-        "total_counts_diff",
-        "detected_genes_diff",
-        "cell_area_diff",
-        "nucleus_area_diff",
-        "nucleus_cell_ratio_diff",
-
-        "spatial_weight",
-        "profile_weight",
-        "morphology_weight",
-        "align_weight",
-        "combo_weight",
-    ]
-
-    if n < 2:
-        return pd.DataFrame(columns=cols)
-
-    if measurement in {"align", "mix_nonspatial", "mix"}:
-        source, target, neighbor_distance = pairwise_neighbors(
-            nodes,
-            blocks,
-            k,
-            measurement,
-        )
-    else:
-        embed = edge_embedding(blocks, measurement)
-        embed = np.nan_to_num(embed, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
-
-        kk = min(k, n - 1)
-        neighbor_distance, idx = (
-            NearestNeighbors(n_neighbors=kk + 1, algorithm="kd_tree")
-            .fit(embed)
-            .kneighbors(embed)
-        )
-
-        source = np.repeat(np.arange(n), kk)
-        target = idx[:, 1:].ravel()
-        neighbor_distance = neighbor_distance[:, 1:].ravel()
-
-    raw_candidate_directed_edges = int(neighbor_distance.size)
-
-    not_self = source != target
-    self_loop_candidates = int((~not_self).sum())
-
-    source = source[not_self]
-    target = target[not_self]
-    neighbor_distance = neighbor_distance[not_self]
-
-    candidate_directed_edges = int(neighbor_distance.size)
-    neighbor_cutoff = auto_neighbor_cutoff(neighbor_distance, measurement)
-
-    keep = neighbor_distance <= neighbor_cutoff
-
-    source = source[keep]
-    target = target[keep]
-    neighbor_distance = neighbor_distance[keep]
-
-    kept_directed_edges = int(neighbor_distance.size)
-    pruned_directed_edges = candidate_directed_edges - kept_directed_edges
-
-    edges = pd.DataFrame(
-        {
-            "source": np.minimum(source, target),
-            "target": np.maximum(source, target),
-            "neighbor_distance": neighbor_distance,
-        }
-    )
-
-    edges = edges.sort_values("neighbor_distance")
-    duplicated_undirected_edges = int(edges.duplicated(["source", "target"]).sum())
-    edges = edges.drop_duplicates(["source", "target"])
-    edges = edges.sort_values(["source", "target"]).reset_index(drop=True)
-
-    edges.attrs["neighbor_cutoff"] = float(neighbor_cutoff)
-    edges.attrs["raw_candidate_directed_edges"] = raw_candidate_directed_edges
-    edges.attrs["candidate_directed_edges"] = candidate_directed_edges
-    edges.attrs["kept_directed_edges"] = kept_directed_edges
-    edges.attrs["pruned_directed_edges"] = pruned_directed_edges
-    edges.attrs["self_loop_candidates"] = self_loop_candidates
-    edges.attrs["duplicated_undirected_edges"] = duplicated_undirected_edges
+    graph_nodes = nodes.copy()
+    graph_nodes["component_id"] = labels
+    graph_nodes["component_size"] = sizes
 
     src = edges["source"].to_numpy(dtype=np.int64)
     dst = edges["target"].to_numpy(dtype=np.int64)
-
-    x = nodes["x_centroid"].to_numpy(dtype=np.float32)
-    y = nodes["y_centroid"].to_numpy(dtype=np.float32)
-
-    dx = x[dst] - x[src]
-    dy = y[dst] - y[src]
-    distance = np.sqrt(dx * dx + dy * dy).astype(np.float32)
-
-    spatial_scaled_distance = pair_block_distance(blocks["spatial"], src, dst)
-    profile_distance = pair_block_distance(blocks["profile"], src, dst)
-    morphology_distance = pair_block_distance(blocks["morphology"], src, dst)
-    seqs = node_sequences(nodes)
-    align_distance = pair_align_distance(seqs, src, dst)
-
-    weights = EDGE_MEASUREMENTS[measurement]["weights"]
-
-    combo_distance = np.sqrt(
-        (weights.get("spatial", 0.0) * spatial_scaled_distance) ** 2
-        + (weights.get("profile", 0.0) * profile_distance) ** 2
-        + (weights.get("morphology", 0.0) * morphology_distance) ** 2
-        + (weights.get("align", 0.0) * align_distance) ** 2
-    ).astype(np.float32)
-
     ids = nodes["cell_id"].to_numpy(dtype=str)
-    island = nodes["island_id"].to_numpy(dtype=np.int32)
 
-    log_total = nodes["log_total_counts"].to_numpy(dtype=np.float32)
-    log_detected = nodes["log_detected_genes"].to_numpy(dtype=np.float32)
-    cell_area = nodes["cell_area"].to_numpy(dtype=np.float32)
-    nucleus_area = nodes["nucleus_area"].to_numpy(dtype=np.float32)
-    nucleus_ratio = nodes["nucleus_cell_ratio"].to_numpy(dtype=np.float32)
-
-    edges["measurement"] = EDGE_MEASUREMENTS[measurement]["label"]
-
-    edges["distance"] = distance
-    edges["spatial_scaled_distance"] = spatial_scaled_distance
-    edges["profile_distance"] = profile_distance
-    edges["morphology_distance"] = morphology_distance
-    edges["align_distance"] = align_distance
-    edges["combo_distance"] = combo_distance
-
-    edges["dx"] = dx
-    edges["dy"] = dy
-    edges["abs_dx"] = np.abs(dx)
-    edges["abs_dy"] = np.abs(dy)
-    edges["angle"] = np.arctan2(dy, dx)
-    edges["direction_x"] = dx / (distance + 1e-6)
-    edges["direction_y"] = dy / (distance + 1e-6)
-
-    edges["same_spatial_island"] = (island[src] == island[dst]).astype(np.int8)
-
-    edges["total_counts_diff"] = np.abs(log_total[dst] - log_total[src])
-    edges["detected_genes_diff"] = np.abs(log_detected[dst] - log_detected[src])
-    edges["cell_area_diff"] = np.abs(cell_area[dst] - cell_area[src])
-    edges["nucleus_area_diff"] = np.abs(nucleus_area[dst] - nucleus_area[src])
-    edges["nucleus_cell_ratio_diff"] = np.abs(nucleus_ratio[dst] - nucleus_ratio[src])
-
-    edges["spatial_weight"] = 1.0 / (1.0 + spatial_scaled_distance)
-    edges["profile_weight"] = 1.0 / (1.0 + profile_distance)
-    edges["morphology_weight"] = 1.0 / (1.0 + morphology_distance)
-    edges["align_weight"] = 1.0 / (1.0 + align_distance)
-    edges["combo_weight"] = 1.0 / (1.0 + combo_distance)
-
+    edges["measurement"] = MEASUREMENTS[measurement]["label"]
+    edges["xy_distance"] = pair_distance(blocks["spatial"], src, dst)
+    edges["expression_distance"] = pair_distance(blocks["expression"], src, dst)
+    edges["morphology_distance"] = pair_distance(blocks["morphology"], src, dst)
     edges["source_cell_id"] = ids[src]
     edges["target_cell_id"] = ids[dst]
+    edges["source_component_id"] = labels[src]
+    edges["target_component_id"] = labels[dst]
+    edges["source_component_size"] = sizes[src]
+    edges["target_component_size"] = sizes[dst]
+    edges["same_component"] = (labels[src] == labels[dst]).astype(np.int8)
 
-    return edges[cols]
+    return edges[EDGE_COLS], graph_nodes
 
-
-def representation(nodes: pd.DataFrame, edges: pd.DataFrame):
-    features = [
-        "x_aligned",
-        "y_aligned",
-
-        "total_counts",
-        "log_total_counts",
-        "n_detected_genes",
-        "log_detected_genes",
-
-        "cell_area",
-        "nucleus_area",
-        "nucleus_cell_ratio",
-
-        "spatial_island_id",
-        "spatial_island_size",
-
-        "component_id",
-        "component_size",
-    ]
-
-    edge_features = [
-        "distance",
-        "neighbor_distance",
-        "spatial_scaled_distance",
-        "profile_distance",
-        "morphology_distance",
-        "align_distance",
-        "combo_distance",
-
-        "dx",
-        "dy",
-        "abs_dx",
-        "abs_dy",
-        "angle",
-        "direction_x",
-        "direction_y",
-
-        "same_spatial_island",
-        "same_component",
-
-        "total_counts_diff",
-        "detected_genes_diff",
-        "cell_area_diff",
-        "nucleus_area_diff",
-        "nucleus_cell_ratio_diff",
-
-        "spatial_weight",
-        "profile_weight",
-        "morphology_weight",
-        "align_weight",
-        "combo_weight",
-
-        "source_component_id",
-        "target_component_id",
-        "source_component_size",
-        "target_component_size",
-    ]
-
-    x = nodes[features].to_numpy(dtype=np.float32)
-    pos = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
-    ids = nodes["cell_id"].to_numpy(dtype=str)
-
-    undirected = pd.concat(
-        [
-            edges[["source", "target"]],
-            edges.rename(columns={"source": "target", "target": "source"})[
-                ["source", "target"]
-            ],
-        ],
-        ignore_index=True,
-    )
-
-    edge_index = undirected.to_numpy(dtype=np.int64).T
-
-    attr_df = edges[edge_features].copy()
-    reverse_attr_df = attr_df.copy()
-
-    for col in ("dx", "dy", "direction_x", "direction_y"):
-        if col in reverse_attr_df.columns:
-            reverse_attr_df[col] = -reverse_attr_df[col]
-
-    if {"dx", "dy", "angle"}.issubset(reverse_attr_df.columns):
-        reverse_attr_df["angle"] = np.arctan2(
-            reverse_attr_df["dy"].to_numpy(dtype=np.float32),
-            reverse_attr_df["dx"].to_numpy(dtype=np.float32),
-        )
-
-    for source_col, target_col in (
-        ("source_component_id", "target_component_id"),
-        ("source_component_size", "target_component_size"),
-    ):
-        if source_col in reverse_attr_df.columns and target_col in reverse_attr_df.columns:
-            reverse_attr_df[[source_col, target_col]] = reverse_attr_df[
-                [target_col, source_col]
-            ].to_numpy()
-
-    attr = attr_df.to_numpy(dtype=np.float32)
-    reverse_attr = reverse_attr_df.to_numpy(dtype=np.float32)
-
-    edge_attr = np.vstack(
-        [
-            attr,
-            reverse_attr,
-        ]
-    )
-
-    return x, pos, edge_index, edge_attr, ids, features, edge_features
-
-def plot_cells(nodes: pd.DataFrame, out_path: Path):
-    import matplotlib.pyplot as plt
-
-    plt.figure(figsize=(7, 7))
-    plt.scatter(
-        nodes["x_centroid"],
-        nodes["y_centroid"],
-        c=nodes["island_id"],
-        s=6,
-        alpha=0.85,
-    )
-    plt.gca().invert_yaxis()
-    plt.axis("equal")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=200)
-    plt.close()
-
-
-def plot_graph(
-    nodes: pd.DataFrame,
-    edges: pd.DataFrame,
-    out_path: Path,
-    metric: str | None = None,
-    node_color: str = "component_id",
-):
-    import matplotlib.pyplot as plt
-    from matplotlib.collections import LineCollection
-
-    pos = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
-    pairs = edges[["source", "target"]].to_numpy(dtype=np.int64)
-
-    fig, ax = plt.subplots(figsize=(7, 7))
-
-    if pairs.size:
-        lines = LineCollection(pos[pairs], linewidths=0.25, alpha=0.25)
-
-        if metric is not None and metric in edges:
-            lines.set_array(edges[metric].to_numpy(dtype=np.float32))
-            fig.colorbar(lines, ax=ax, label=metric)
-
-        ax.add_collection(lines)
-
-    color = nodes[node_color] if node_color in nodes else nodes["spatial_island_id"]
-
-    ax.scatter(
-        nodes["x_centroid"],
-        nodes["y_centroid"],
-        c=color,
-        s=6,
-        alpha=0.85,
-    )
-
-    ax.invert_yaxis()
-    ax.axis("equal")
-
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=200)
-    plt.close(fig)
-
-def plot_nodes_by_metric(nodes: pd.DataFrame, out_path: Path, metric: str):
-    import matplotlib.pyplot as plt
-
-    plt.figure(figsize=(7, 7))
-    plt.scatter(
-        nodes["x_centroid"],
-        nodes["y_centroid"],
-        c=nodes[metric],
-        s=6,
-        alpha=0.85,
-    )
-    plt.colorbar(label=metric)
-    plt.gca().invert_yaxis()
-    plt.axis("equal")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=200)
-    plt.close()
-
-
-def plot_edge_hist(edges: pd.DataFrame, out_path: Path):
-    import matplotlib.pyplot as plt
-
-    cols = [
-        "distance",
-        "neighbor_distance",
-        "spatial_scaled_distance",
-        "profile_distance",
-        "morphology_distance",
-        "align_distance",
-        "combo_distance",
-    ]
-
-    cols = [c for c in cols if c in edges]
-
-    fig, axes = plt.subplots(len(cols), 1, figsize=(8, 2.2 * len(cols)))
-
-    if len(cols) == 1:
-        axes = [axes]
-
-    for ax, c in zip(axes, cols):
-        values = edges[c].to_numpy(dtype=np.float32)
-        values = values[np.isfinite(values)]
-
-        ax.hist(values, bins=60, alpha=0.8)
-        ax.set_title(c)
-
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=200)
-    plt.close(fig)
-
-def write_summary(
-    out_dir: Path,
-    adata,
-    selected,
-    nodes: pd.DataFrame,
-    features: list[str],
-    edge_features: list[str],
-    k: int,
-    measurements: list[str],
-    edge_summaries: dict,
-):
-    summary = {
-        **adata.uns["xenium_dump"],
-        "crop_mode": selected.uns["crop_mode"],
-        "n_cells_loaded": int(adata.n_obs),
-        "n_cells_dumped": int(selected.n_obs),
-        "n_features": int(adata.n_vars),
-        "k": int(k),
-        "measurements": measurements,
-        "edge_measurements": EDGE_MEASUREMENTS,
-        "edge_summaries": edge_summaries,
-        "n_spatial_islands": int(nodes["spatial_island_id"].nunique()),
-        "node_feature_columns": features,
-        "edge_feature_columns": edge_features,
+def checks(nodes, graph_nodes, edges, measurement):
+    return {
+        "measurement": measurement,
+        "label": MEASUREMENTS[measurement]["label"],
+        "n_nodes": int(len(nodes)),
+        "n_edges": int(len(edges)),
+        "n_components": int(graph_nodes["component_id"].nunique()) if len(graph_nodes) else 0,
+        "largest_component": int(graph_nodes["component_size"].max()) if len(graph_nodes) else 0,
+        "singletons": int((graph_nodes["component_size"] == 1).sum()) if len(graph_nodes) else 0,
+        "neighbor_distance_median": float(edges["neighbor_distance"].median()) if len(edges) else None,
+        "neighbor_distance_max": float(edges["neighbor_distance"].max()) if len(edges) else None,
+        "neighbor_cutoff": edges.attrs.get("neighbor_cutoff"),
+        "raw_directed_edges": edges.attrs.get("raw_directed_edges"),
+        "kept_directed_edges": edges.attrs.get("kept_directed_edges"),
+        "pruned_directed_edges": edges.attrs.get("pruned_directed_edges"),
     }
 
-    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+def write_npz(out_dir, measurement, graph_nodes, edges):
+    node_features = graph_nodes[["log_total_counts", "log_detected_genes", "cell_area", "nucleus_area", "nucleus_cell_ratio", "component_id", "component_size"]].to_numpy(dtype=np.float32)
+    pos = graph_nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
+    edge_index = edges[["source", "target"]].to_numpy(dtype=np.int64).T if len(edges) else np.empty((2, 0), dtype=np.int64)
+    edge_attr = edges[["neighbor_distance", "xy_distance", "expression_distance", "morphology_distance", "same_component"]].to_numpy(dtype=np.float32) if len(edges) else np.empty((0, 5), dtype=np.float32)
+    np.savez_compressed(
+        out_dir / f"representation_{measurement}.npz",
+        node_features=node_features,
+        node_positions=pos,
+        edge_index=edge_index,
+        edge_attr=edge_attr,
+        cell_ids=graph_nodes["cell_id"].to_numpy(dtype=str),
+        feature_columns=np.asarray(["log_total_counts", "log_detected_genes", "cell_area", "nucleus_area", "nucleus_cell_ratio", "component_id", "component_size"], dtype=str),
+        edge_feature_columns=np.asarray(["neighbor_distance", "xy_distance", "expression_distance", "morphology_distance", "same_component"], dtype=str),
+        measurement=np.asarray([MEASUREMENTS[measurement]["label"]], dtype=str),
+    )
 
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("dataset_id")
-    p.add_argument("--max-cells", type=int, default=50_000)
-    p.add_argument("--k", type=int, default=3)
-    p.add_argument("--only", choices=["all", *EDGE_MEASUREMENTS.keys()], default="all")
-    p.add_argument("--align-seq-len", type=int, default=15)
-    p.add_argument("--align-candidates", type=int, default=80)
-    p.add_argument("--align-exact", action="store_true")
+    p.add_argument("--k", type=int, default=K)
     return p.parse_args()
-
-def dump_one_graph(
-    out_dir: Path,
-    nodes: pd.DataFrame,
-    blocks: dict[str, np.ndarray],
-    k: int,
-    measurement: str,
-):
-    print(f"start {measurement}", flush=True)
-
-    edges = make_edges(nodes, blocks, k, measurement)
-
-    graph_nodes = nodes_for_graph(nodes, edges)
-    edges = add_graph_components_to_edges(edges, graph_nodes)
-
-    checks = graph_checks(nodes, graph_nodes, edges, measurement)
-    print_graph_checks(checks)
-
-    x, pos, edge_index, edge_attr, ids, features, edge_features = representation(
-        graph_nodes,
-        edges,
-    )
-
-    graph_nodes.to_csv(out_dir / f"nodes_{measurement}.csv", index=False)
-    edges.to_csv(out_dir / f"edges_{measurement}.csv", index=False)
-    (out_dir / f"checks_{measurement}.json").write_text(
-        json.dumps(checks, indent=2) + "\n"
-    )
-
-    np.savez_compressed(
-        out_dir / f"representation_{measurement}.npz",
-        node_features=x,
-        node_positions=pos,
-        edge_index=edge_index,
-        edge_attr=edge_attr,
-        cell_ids=ids,
-        feature_columns=np.asarray(features, dtype=str),
-        edge_feature_columns=np.asarray(edge_features, dtype=str),
-        measurement=np.asarray([EDGE_MEASUREMENTS[measurement]["label"]], dtype=str),
-    )
-
-    plot_graph(
-        graph_nodes,
-        edges,
-        out_dir / f"knn_graph_{measurement}.png",
-        node_color="component_id",
-    )
-
-    plot_graph(
-        graph_nodes,
-        edges,
-        out_dir / f"weighted_graph_{measurement}.png",
-        "combo_weight",
-        node_color="component_id",
-    )
-
-    plot_edge_hist(edges, out_dir / f"edge_metrics_{measurement}.png")
-
-    if measurement == "mix_nonspatial":
-        graph_nodes.to_csv(out_dir / "nodes_graph.csv", index=False)
-        edges.to_csv(out_dir / "edges.csv", index=False)
-
-        np.savez_compressed(
-            out_dir / "representation.npz",
-            node_features=x,
-            node_positions=pos,
-            edge_index=edge_index,
-            edge_attr=edge_attr,
-            cell_ids=ids,
-            feature_columns=np.asarray(features, dtype=str),
-            edge_feature_columns=np.asarray(edge_features, dtype=str),
-            measurement=np.asarray([EDGE_MEASUREMENTS[measurement]["label"]], dtype=str),
-        )
-
-        plot_graph(
-            graph_nodes,
-            edges,
-            out_dir / "knn_graph.png",
-            node_color="component_id",
-        )
-
-    return edges, graph_nodes, features, edge_features, checks
 
 def main():
     args = parse_args()
 
-    EDGE_MEASUREMENTS["align"]["seq_len"] = int(args.align_seq_len)
-    EDGE_MEASUREMENTS["align"]["candidate_k"] = int(args.align_candidates)
-    EDGE_MEASUREMENTS["mix"]["candidate_k"] = int(args.align_candidates)
-    EDGE_MEASUREMENTS["mix_nonspatial"]["candidate_k"] = int(args.align_candidates)
-
-    EDGE_MEASUREMENTS["align"]["exact_pairwise"] = bool(args.align_exact)
-    EDGE_MEASUREMENTS["mix"]["exact_pairwise"] = bool(args.align_exact)
-    EDGE_MEASUREMENTS["mix_nonspatial"]["exact_pairwise"] = bool(args.align_exact)
-
-    xenium_dir = DATA_ROOT / args.dataset_id
-    out_dir = OUTPUT_ROOT / args.dataset_id
-    out_dir.mkdir(parents=True, exist_ok=True)
+    xenium_dir = data_dir(args.dataset_id)
+    out_dir = make_out_dir(args.dataset_id)
 
     adata = load_xenium(xenium_dir)
-    selected = select_cells(adata, args.max_cells, args.k)
 
-    nodes = make_nodes(selected)
-    nodes.to_csv(out_dir / "nodes.csv", index=False)
-    blocks = edge_blocks(nodes)
+    nodes = make_nodes(adata)
+    nodes["top_gene_ids"] = top_gene_ids(adata.X, TOP_GENES_PER_CELL)
+    blocks = build_blocks(adata, nodes, EXPRESSION_PCS)
 
-    plot_cells(nodes, out_dir / "cells.png")
-    plot_nodes_by_metric(nodes, out_dir / "counts.png", "log_total_counts")
-    plot_nodes_by_metric(nodes, out_dir / "nucleus_ratio.png", "nucleus_cell_ratio")
+    expr_cols = []
+    for i in range(blocks["expression"].shape[1]):
+        col = f"expression_pc{i + 1}"
+        nodes[col] = blocks["expression"][:, i]
+        expr_cols.append(col)
 
-    measurements = (
-        list(EDGE_MEASUREMENTS.keys())
-        if args.only == "all"
-        else [args.only]
-    )
+    node_cols = NODE_BASE_COLS + ["top_gene_ids"] + expr_cols
+    nodes[node_cols].to_csv(out_dir / "nodes.csv", index=False)
 
-    edge_summaries = {}
-    features = []
-    edge_features = []
+    summaries = {}
 
-    for measurement in measurements:
-        edges, graph_nodes, features, edge_features, checks = dump_one_graph(
-            out_dir,
-            nodes,
+    for m in tqdm(list(MEASUREMENTS), desc="graphs"):
+        pairs = load_or_make_pairs(out_dir, nodes[node_cols], blocks, m)
+        edges, graph_nodes = edges_from_pairs(
+            nodes[node_cols],
             blocks,
+            m,
+            pairs,
             args.k,
-            measurement,
         )
 
-        edge_summaries[measurement] = {
-            "label": EDGE_MEASUREMENTS[measurement]["label"],
-            "n_edges": int(edges.shape[0]),
-            "n_components": int(graph_nodes["component_id"].nunique()),
-            "largest_component": int(graph_nodes["component_size"].max()),
-            "singletons": int((graph_nodes["component_size"] == 1).sum()),
-            "weights": EDGE_MEASUREMENTS[measurement]["weights"],
-            "neighbor_cutoff": edges.attrs.get("neighbor_cutoff"),
-            "raw_candidate_directed_edges": edges.attrs.get("raw_candidate_directed_edges"),
-            "candidate_directed_edges": edges.attrs.get("candidate_directed_edges"),
-            "kept_directed_edges": edges.attrs.get("kept_directed_edges"),
-            "pruned_directed_edges": edges.attrs.get("pruned_directed_edges"),
-            "self_loop_candidates": edges.attrs.get("self_loop_candidates", 0),
-            "duplicated_undirected_edges": edges.attrs.get("duplicated_undirected_edges", 0),
-            "checks": checks,
-            "node_csv": f"nodes_{measurement}.csv",
-            "edge_csv": f"edges_{measurement}.csv",
-            "checks_json": f"checks_{measurement}.json",
-            "representation_npz": f"representation_{measurement}.npz",
-        }
+        chk = checks(nodes, graph_nodes, edges, m)
 
-        print(f"{measurement}: edges={edges.shape[0]}")
+        graph_nodes.to_csv(out_dir / f"nodes_{m}.csv", index=False)
+        edges.to_csv(out_dir / f"edges_{m}.csv", index=False)
+        (out_dir / f"checks_{m}.json").write_text(json.dumps(chk, indent=2) + "\n")
 
-    write_summary(
-        out_dir,
-        adata,
-        selected,
-        nodes,
-        features,
-        edge_features,
-        args.k,
-        measurements,
-        edge_summaries,
-    )
+        write_npz(out_dir, m, graph_nodes, edges)
+
+        summaries[m] = chk
+        print(f"{m}: nodes={chk['n_nodes']} edges={chk['n_edges']} components={chk['n_components']}", flush=True)
+
+    (out_dir / "summary.json").write_text(json.dumps({
+        **adata.uns["xenium_clean"],
+        "n_cells_loaded": int(adata.n_obs),
+        "n_cells_dumped": int(adata.n_obs),
+        "n_genes": int(adata.n_vars),
+        "k": int(args.k),
+        "expression_pcs": int(EXPRESSION_PCS),
+        "use_neighbor_cutoff": bool(USE_NEIGHBOR_CUTOFF),
+        "cutoff_quantile": float(CUTOFF_QUANTILE),
+        "cutoff_mad": float(CUTOFF_MAD),
+        "min_edges_per_node": int(MIN_EDGES_PER_NODE),
+        "measurements": list(MEASUREMENTS),
+        "measurement_defs": MEASUREMENTS,
+        "node_columns": node_cols,
+        "edge_columns": EDGE_COLS,
+        "edge_summaries": summaries,
+    }, indent=2) + "\n")
 
     print(f"saved: {out_dir}")
-    print(f"cells: {nodes.shape[0]}")
-    print(f"spatial islands: {nodes['spatial_island_id'].nunique()}")
-
 
 if __name__ == "__main__":
     main()
