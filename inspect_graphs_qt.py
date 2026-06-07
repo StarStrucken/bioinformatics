@@ -10,12 +10,14 @@ import pyqtgraph as pg
 
 from xenum_axes import build_axis_space
 from xenum_distances import distance_blocks, pair_distance
-from xenum_measurements import MEASUREMENTS
+from xenum_measurements import MEASUREMENTS, VISIBLE_MEASUREMENTS
 from xenum_paths import existing_out_dir
 
 MAX_VISIBLE_EDGES = 12_000
+FALLBACK_PREDICTION_K = 4
 MAX_COMPONENT_EDGES = 2_000
 MAX_VISIBLE_NODES = 80_000
+SHOW_HIDDEN_MEASUREMENTS = False
 COMPONENT_PALETTE = [
     (230, 25, 75),
     (0, 130, 200),
@@ -36,12 +38,23 @@ def discover_measurements(out_dir: Path):
 
     for edge_path in sorted(out_dir.glob("edges_*.csv")):
         m = edge_path.stem.removeprefix("edges_")
+
+        if "_k" in m:
+            continue
+
         node_path = out_dir / f"nodes_{m}.csv"
         if node_path.exists():
             found.append(m)
 
-    ordered = [m for m in MEASUREMENTS if m in found]
-    ordered.extend(m for m in found if m not in ordered)
+    ordered = [m for m in VISIBLE_MEASUREMENTS if m in found]
+    ordered.extend(m for m in found if m not in ordered and m not in MEASUREMENTS)
+
+    if SHOW_HIDDEN_MEASUREMENTS:
+        ordered.extend(m for m in MEASUREMENTS if m in found and m not in ordered)
+        ordered.extend(m for m in found if m not in ordered)
+
+    if not ordered:
+        ordered = [m for m in MEASUREMENTS if m in found]
 
     if not ordered and (out_dir / "nodes_graph.csv").exists() and (out_dir / "edges.csv").exists():
         ordered = ["graph"]
@@ -69,6 +82,28 @@ def load_dump(out_dir: Path):
 
     return measurements, nodes, edges
 
+def load_best_prediction_k(out_dir: Path):
+    path = out_dir / "best_k_by_measurement.csv"
+
+    if not path.exists():
+        return {}
+
+    df = pd.read_csv(path)
+    out = {}
+
+    for r in df.itertuples(index=False):
+        out[str(r.measurement)] = int(r.k)
+
+    return out
+
+def load_best_k_table(out_dir: Path):
+    path = out_dir / "best_k_by_measurement.csv"
+
+    if not path.exists():
+        return pd.DataFrame()
+
+    return pd.read_csv(path)
+
 def build_neighbors(edges_by_measurement):
     out = {}
 
@@ -88,6 +123,44 @@ def build_neighbors(edges_by_measurement):
             vals.sort(key=lambda x: x[1])
 
     return out
+
+def load_predictions(out_dir: Path, measurements, best_k):
+    out = {}
+
+    for m in measurements:
+        k = int(best_k.get(m, FALLBACK_PREDICTION_K))
+        path = out_dir / f"predictions_{m}_k{k}.csv"
+
+        if path.exists():
+            df = pd.read_csv(path)
+            df.attrs["k"] = k
+            out[m] = df
+
+    return out
+
+def prediction_k_text(measurements, best_k, predictions):
+    rows = []
+
+    for m in measurements:
+        if m in predictions:
+            k = int(predictions[m].attrs.get("k", FALLBACK_PREDICTION_K))
+            mark = "" if m in best_k else " fallback"
+            rows.append(f"{m:<12} k {k}{mark}")
+
+    if not rows:
+        return "no prediction files"
+
+    return "\n".join(rows)
+
+def make_side_label(text):
+    label = QtWidgets.QLabel(text)
+    label.setWordWrap(True)
+    label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+    label.setSizePolicy(
+        QtWidgets.QSizePolicy.Policy.Preferred,
+        QtWidgets.QSizePolicy.Policy.Maximum,
+    )
+    return label
 
 class GraphPane(QtWidgets.QWidget):
     nodeClicked = QtCore.Signal(int)
@@ -425,6 +498,303 @@ class GraphPane(QtWidgets.QWidget):
 
         self.component_pair_cache = {}
 
+class PredictionPane(QtWidgets.QWidget):
+    nodeClicked = QtCore.Signal(int)
+
+    def __init__(self, measurement, predictions):
+        super().__init__()
+
+        self.measurement = measurement
+        self.predictions = predictions
+        self.k = int(predictions.attrs.get("k", FALLBACK_PREDICTION_K))
+
+        self.node_ids = predictions["node"].to_numpy(dtype=int)
+        self.node_to_row = {int(v): i for i, v in enumerate(self.node_ids)}
+
+        self.x = predictions["x"].to_numpy(dtype=float)
+        self.y = -predictions["y"].to_numpy(dtype=float)
+        self.pred_x = predictions["pred_x"].to_numpy(dtype=float)
+        self.pred_y = -predictions["pred_y"].to_numpy(dtype=float)
+        self.error = predictions["error"].to_numpy(dtype=float)
+        self.used_neighbors = predictions["used_neighbors"].to_numpy(dtype=int)
+
+        self.ok = (
+            np.isfinite(self.x)
+            & np.isfinite(self.y)
+            & np.isfinite(self.pred_x)
+            & np.isfinite(self.pred_y)
+        )
+
+        self.plot = pg.PlotWidget()
+        self.plot.setTitle(f"{measurement} prediction k={self.k}")
+        self.plot.setLabel("bottom", "x")
+        self.plot.setLabel("left", "y * -1")
+        self.plot.showGrid(x=True, y=True, alpha=0.15)
+
+        self.lines = pg.PlotDataItem(
+            pen=pg.mkPen(80, 80, 80, 45, width=0.7),
+            connect="finite",
+        )
+
+        self.real_scatter = pg.ScatterPlotItem(
+            size=4,
+            brush=pg.mkBrush(150, 150, 150, 45),
+            pen=pg.mkPen(120, 120, 120, 35),
+        )
+        self.real_scatter.sigClicked.connect(self._clicked)
+
+        self.pred_scatter = pg.ScatterPlotItem(
+            size=7,
+            pen=pg.mkPen(20, 20, 20, 80),
+        )
+        self.pred_scatter.sigClicked.connect(self._clicked)
+
+        self.selected_line = pg.PlotDataItem(
+            pen=pg.mkPen(220, 30, 30, 255, width=3.0),
+            connect="finite",
+        )
+
+        self.selected_node = pg.ScatterPlotItem(
+            size=15,
+            brush=pg.mkBrush(255, 210, 0, 255),
+            pen=pg.mkPen(0, 0, 0, 255, width=2),
+        )
+
+        self.predicted_node = pg.ScatterPlotItem(
+            size=15,
+            brush=pg.mkBrush(230, 40, 40, 255),
+            pen=pg.mkPen(80, 0, 0, 255, width=2),
+        )
+
+        self.lines.setZValue(1)
+        self.real_scatter.setZValue(2)
+        self.pred_scatter.setZValue(3)
+        self.selected_line.setZValue(10)
+        self.selected_node.setZValue(11)
+        self.predicted_node.setZValue(12)
+
+        for item in [
+            self.lines,
+            self.selected_line,
+            self.selected_node,
+            self.predicted_node,
+        ]:
+            item.setAcceptedMouseButtons(QtCore.Qt.MouseButton.NoButton)
+
+        self.plot.addItem(self.lines)
+        self.plot.addItem(self.real_scatter)
+        self.plot.addItem(self.pred_scatter)
+        self.plot.addItem(self.selected_line)
+        self.plot.addItem(self.selected_node)
+        self.plot.addItem(self.predicted_node)
+
+        self._refresh()
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.addWidget(self.plot)
+
+    def _line_data(self, idx):
+        if idx is None or len(idx) == 0:
+            return [], []
+
+        xs = np.empty(len(idx) * 3, dtype=float)
+        ys = np.empty(len(idx) * 3, dtype=float)
+
+        xs[0::3] = self.x[idx]
+        xs[1::3] = self.pred_x[idx]
+        xs[2::3] = np.nan
+
+        ys[0::3] = self.y[idx]
+        ys[1::3] = self.pred_y[idx]
+        ys[2::3] = np.nan
+
+        return xs, ys
+
+    def _prediction_brushes(self, idx):
+        vals = self.error[idx]
+        finite = vals[np.isfinite(vals)]
+
+        if len(finite) == 0:
+            return [pg.mkBrush(120, 120, 120, 100) for _ in idx]
+
+        lo = float(np.quantile(finite, 0.05))
+        hi = float(np.quantile(finite, 0.95))
+
+        if hi <= lo:
+            hi = lo + 1.0
+
+        brushes = []
+
+        for v in vals:
+            if not np.isfinite(v):
+                brushes.append(pg.mkBrush(120, 120, 120, 100))
+                continue
+
+            t = (float(v) - lo) / (hi - lo)
+            t = max(0.0, min(1.0, t))
+
+            if t < 0.25:
+                color = QtGui.QColor(30, 120, 255, 230)
+            elif t < 0.50:
+                color = QtGui.QColor(40, 190, 80, 230)
+            elif t < 0.75:
+                color = QtGui.QColor(245, 190, 40, 230)
+            else:
+                color = QtGui.QColor(230, 60, 40, 230)
+
+            brushes.append(pg.mkBrush(color))
+
+        return brushes
+
+    def _refresh(self):
+        idx = np.flatnonzero(self.ok)
+
+        xs, ys = self._line_data(idx)
+        self.lines.setData(xs, ys)
+
+        self.real_scatter.setData(
+            x=self.x[idx],
+            y=self.y[idx],
+            data=self.node_ids[idx],
+        )
+
+        self.pred_scatter.setData(
+            x=self.pred_x[idx],
+            y=self.pred_y[idx],
+            brush=self._prediction_brushes(idx),
+            data=self.node_ids[idx],
+        )
+
+    def _clicked(self, item, points):
+        if points is None or len(points) == 0:
+            return
+
+        data = points[0].data()
+
+        if data is None:
+            return
+
+        self.nodeClicked.emit(int(data))
+
+    def show_selection(self, node):
+        row = self.node_to_row.get(int(node))
+
+        if row is None or not self.ok[row]:
+            self.selected_line.setData([], [])
+            self.selected_node.setData([], [])
+            self.predicted_node.setData([], [])
+            return None
+
+        xs, ys = self._line_data(np.asarray([row], dtype=int))
+        self.selected_line.setData(xs, ys)
+
+        self.selected_node.setData(
+            x=[self.x[row]],
+            y=[self.y[row]],
+        )
+
+        self.predicted_node.setData(
+            x=[self.pred_x[row]],
+            y=[self.pred_y[row]],
+        )
+
+        return {
+            "measurement": self.measurement,
+            "k": int(self.k),
+            "error": float(self.error[row]),
+            "used_neighbors": int(self.used_neighbors[row]),
+            "dx": float(self.pred_x[row] - self.x[row]),
+            "dy": float(-(self.pred_y[row] - self.y[row])),
+        }
+
+class BenchmarkTable(QtWidgets.QTableWidget):
+    def __init__(self, df):
+        super().__init__()
+
+        self.df = df.copy()
+        self.setSortingEnabled(True)
+        self.horizontalHeader().setStretchLastSection(True)
+        self.setAlternatingRowColors(True)
+        self._fill()
+
+    def _fmt(self, value, digits=3):
+        if pd.isna(value):
+            return ""
+        if isinstance(value, (int, np.integer)):
+            return str(int(value))
+        if isinstance(value, (float, np.floating)):
+            return f"{float(value):.{digits}g}"
+        return str(value)
+
+    def _fill(self):
+        if self.df.empty:
+            self.setColumnCount(1)
+            self.setRowCount(1)
+            self.setHorizontalHeaderLabels(["status"])
+            self.setItem(0, 0, QtWidgets.QTableWidgetItem("no best_k_by_measurement.csv"))
+            return
+
+        cols = [
+            "measurement",
+            "k",
+            "median_xy_error",
+            "p90_xy_error",
+            "coverage",
+            "median_vs_spatial_best",
+            "median_vs_spatial_same_k",
+            "spatial_best_k",
+            "spatial_best_median_xy_error",
+        ]
+
+        cols = [c for c in cols if c in self.df.columns]
+        df = self.df[cols].copy()
+
+        if "median_vs_spatial_best" in df.columns:
+            df = df.sort_values(["median_vs_spatial_best", "median_xy_error"])
+
+        labels = {
+            "measurement": "measurement",
+            "k": "k",
+            "median_xy_error": "median err",
+            "p90_xy_error": "p90 err",
+            "coverage": "coverage",
+            "median_vs_spatial_best": "vs spatial best",
+            "median_vs_spatial_same_k": "vs spatial same k",
+            "spatial_best_k": "spatial best k",
+            "spatial_best_median_xy_error": "spatial best err",
+        }
+
+        self.setColumnCount(len(cols))
+        self.setRowCount(len(df))
+        self.setHorizontalHeaderLabels([labels.get(c, c) for c in cols])
+
+        for row_i, r in enumerate(df.itertuples(index=False)):
+            vals = list(r)
+
+            for col_i, value in enumerate(vals):
+                col = cols[col_i]
+                digits = 4 if col == "coverage" else 3
+                item = QtWidgets.QTableWidgetItem(self._fmt(value, digits=digits))
+
+                if col in {"k", "spatial_best_k"} and not pd.isna(value):
+                    item.setData(QtCore.Qt.ItemDataRole.DisplayRole, int(value))
+                elif isinstance(value, (float, np.floating)) and not pd.isna(value):
+                    item.setData(QtCore.Qt.ItemDataRole.DisplayRole, float(value))
+
+                if col == "median_vs_spatial_best" and not pd.isna(value):
+                    v = float(value)
+                    if v < 5:
+                        item.setBackground(QtGui.QColor(190, 255, 190))
+                    elif v < 15:
+                        item.setBackground(QtGui.QColor(255, 245, 180))
+                    else:
+                        item.setBackground(QtGui.QColor(255, 210, 210))
+
+                self.setItem(row_i, col_i, item)
+
+        self.resizeColumnsToContents()
+
 class NeighborTable(QtWidgets.QTableWidget):
     def __init__(self, measurements):
         super().__init__()
@@ -475,7 +845,10 @@ class NeighborTable(QtWidgets.QTableWidget):
                 self.setItem(row_i, col_i, item)
 
             for j, m in enumerate(self.measurements, start=3):
-                d = pair_distance(blocks, m, node, n)
+                try:
+                    d = pair_distance(blocks, m, node, n)
+                except Exception:
+                    d = np.nan
 
                 if m in hits:
                     rank, nd, xy = hits[m]
@@ -747,7 +1120,8 @@ class MeasurementPanel(QtWidgets.QWidget):
         self._emit()
 
     def _core(self):
-        keep = {"spatial", "expression", "morphology", "expr_morph", "expr_morph_spatial", "custom_mix"}
+        keep = set(VISIBLE_MEASUREMENTS)
+        keep.update(m for m in self.boxes if m.startswith("learned"))
         for m, cb in self.boxes.items():
             cb.blockSignals(True)
             cb.setChecked(m in keep)
@@ -760,6 +1134,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.out_dir = out_dir
         self.measurements, self.nodes, self.edges = load_dump(out_dir)
+        self.best_prediction_k = load_best_prediction_k(out_dir)
+        self.predictions = load_predictions(out_dir, self.measurements, self.best_prediction_k)
+        self.best_k_table = load_best_k_table(out_dir)
         self.base_measurement = "spatial" if "spatial" in self.nodes else self.measurements[0]
         self.neighbors = build_neighbors(self.edges)
         self.blocks = distance_blocks(self.nodes[self.base_measurement])
@@ -779,6 +1156,14 @@ class MainWindow(QtWidgets.QMainWindow):
         for m in self.measurements:
             self._create_pane(m)
 
+        self.prediction_panes = {}
+        self.prediction_grid = QtWidgets.QGridLayout()
+        self.prediction_grid.setSpacing(2)
+
+        for m in self.measurements:
+            if m in self.predictions:
+                self._create_prediction_pane(m)
+
         self.coords = CoordinatePanel(self.axis_values.keys(), self.presets)
         self.coords.changed.connect(self.set_axes)
 
@@ -796,11 +1181,64 @@ class MainWindow(QtWidgets.QMainWindow):
         side.addWidget(self.table, stretch=3)
         side.addWidget(self.filters, stretch=2)
 
-        layout = QtWidgets.QHBoxLayout(root)
-        layout.addLayout(self.grid, stretch=4)
-        layout.addLayout(side, stretch=2)
+        self.tabs = QtWidgets.QTabWidget()
+
+        graph_tab = QtWidgets.QWidget()
+        graph_layout = QtWidgets.QHBoxLayout(graph_tab)
+        graph_layout.addLayout(self.grid, stretch=4)
+        graph_layout.addLayout(side, stretch=2)
+
+        prediction_tab = QtWidgets.QWidget()
+        prediction_side = QtWidgets.QVBoxLayout()
+        prediction_side.setContentsMargins(6, 6, 6, 6)
+        prediction_side.setSpacing(6)
+
+        self.prediction_info = make_side_label("click a node")
+
+        self.prediction_k_box = QtWidgets.QPlainTextEdit()
+        self.prediction_k_box.setReadOnly(True)
+        self.prediction_k_box.setPlainText(
+            prediction_k_text(self.measurements, self.best_prediction_k, self.predictions)
+        )
+        self.prediction_k_box.setMaximumHeight(120)
+        self.prediction_k_box.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
+
+        prediction_side.addWidget(make_side_label("prediction: best k per measurement"))
+        prediction_side.addWidget(self.prediction_k_box)
+        prediction_side.addWidget(make_side_label("color: displacement error"))
+        prediction_side.addWidget(make_side_label("blue/green small\nyellow/red large"))
+        prediction_side.addWidget(self.prediction_info)
+        prediction_side.addStretch(1)
+
+        prediction_layout = QtWidgets.QHBoxLayout(prediction_tab)
+        prediction_layout.addLayout(self.prediction_grid, stretch=4)
+        prediction_layout.addLayout(prediction_side, stretch=1)
+
+        benchmark_tab = QtWidgets.QWidget()
+        benchmark_layout = QtWidgets.QVBoxLayout(benchmark_tab)
+        benchmark_layout.setContentsMargins(6, 6, 6, 6)
+
+        self.benchmark_table = BenchmarkTable(self.best_k_table)
+
+        benchmark_title = QtWidgets.QLabel("best k by measurement")
+        benchmark_title.setWordWrap(True)
+
+        benchmark_note = QtWidgets.QLabel("lower vs spatial is better")
+        benchmark_note.setWordWrap(True)
+
+        benchmark_layout.addWidget(benchmark_title)
+        benchmark_layout.addWidget(benchmark_note)
+        benchmark_layout.addWidget(self.benchmark_table)
+
+        self.tabs.addTab(graph_tab, "Graphs")
+        self.tabs.addTab(prediction_tab, "Prediction")
+        self.tabs.addTab(benchmark_tab, "Benchmark")
+
+        layout = QtWidgets.QVBoxLayout(root)
+        layout.addWidget(self.tabs)
 
         self._link_panes()
+        self._link_prediction_panes()
         self._rebuild_grid()
         self.resize(1750, 980)
 
@@ -810,12 +1248,29 @@ class MainWindow(QtWidgets.QMainWindow):
         self.panes[measurement] = pane
         return pane
 
+    def _create_prediction_pane(self, measurement):
+        pane = PredictionPane(measurement, self.predictions[measurement])
+        pane.nodeClicked.connect(self.select_node)
+        self.prediction_panes[measurement] = pane
+        return pane
+
     def _link_panes(self):
         master = self.panes[self.base_measurement].plot
         for m, pane in self.panes.items():
             if m != self.base_measurement:
                 pane.plot.setXLink(master)
                 pane.plot.setYLink(master)
+
+    def _link_prediction_panes(self):
+        if not self.prediction_panes:
+            return
+
+        first = next(iter(self.prediction_panes.values())).plot
+
+        for pane in self.prediction_panes.values():
+            if pane.plot is not first:
+                pane.plot.setXLink(first)
+                pane.plot.setYLink(first)
 
     def _rebuild_grid(self):
         while self.grid.count():
@@ -832,6 +1287,23 @@ class MainWindow(QtWidgets.QMainWindow):
 
         for m, pane in self.panes.items():
             if m not in visible:
+                pane.setVisible(False)
+
+        while self.prediction_grid.count():
+            item = self.prediction_grid.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+
+        pred_visible = [m for m in visible if m in self.prediction_panes]
+
+        for i, m in enumerate(pred_visible):
+            pane = self.prediction_panes[m]
+            pane.setVisible(True)
+            self.prediction_grid.addWidget(pane, i // 2, i % 2)
+
+        for m, pane in self.prediction_panes.items():
+            if m not in pred_visible:
                 pane.setVisible(False)
 
         self.table.set_measurements(visible)
@@ -871,6 +1343,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.table.show_node(node, self.nodes, self.blocks, by_m)
 
+        pred_rows = []
+
+        for m, pane in self.prediction_panes.items():
+            info = pane.show_selection(node)
+            if info is not None and m in self.visible_measurements:
+                pred_rows.append(info)
+
+        if pred_rows:
+            best = sorted(pred_rows, key=lambda x: x["error"])[0]
+            self.prediction_info.setText(
+                f"node {node}\n"
+                f"best {best['measurement']}\n"
+                f"k {best['k']}\n"
+                f"error {best['error']:.3g}\n"
+                f"neighbors {best['used_neighbors']}\n"
+                f"dx {best['dx']:.3g}\n"
+                f"dy {best['dy']:.3g}"
+            )
+        else:
+            self.prediction_info.setText(f"node {node}\nno prediction")
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("dataset_id")
@@ -892,13 +1385,20 @@ def main():
         background: white;
         color: black;
         gridline-color: #cccccc;
+        alternate-background-color: #fafafa;
     }
     QHeaderView::section {
         background: #eeeeee;
         color: black;
+        padding: 3px;
     }
     QLabel {
         color: black;
+    }
+    QPlainTextEdit {
+        background: #fafafa;
+        color: black;
+        border: 1px solid #cccccc;
     }
     """)
     win = MainWindow(out_dir)
