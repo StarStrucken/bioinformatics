@@ -10,7 +10,7 @@ import pyqtgraph as pg
 
 from xenum_axes import build_axis_space
 from xenum_distances import distance_blocks, pair_distance
-from xenum_measurements import MEASUREMENTS, VISIBLE_MEASUREMENTS
+from xenum_measurements import DEPRECATED_MEASUREMENTS, MEASUREMENTS, VISIBLE_MEASUREMENTS
 from xenum_paths import existing_out_dir
 
 MAX_VISIBLE_EDGES = 12_000
@@ -40,6 +40,9 @@ def discover_measurements(out_dir: Path):
         m = edge_path.stem.removeprefix("edges_")
 
         if "_k" in m:
+            continue
+
+        if m in DEPRECATED_MEASUREMENTS:
             continue
 
         node_path = out_dir / f"nodes_{m}.csv"
@@ -741,6 +744,7 @@ class BenchmarkTable(QtWidgets.QTableWidget):
             "median_xy_error",
             "p90_xy_error",
             "coverage",
+            "pred_spread_ratio",
             "median_vs_spatial_best",
             "median_vs_spatial_same_k",
             "spatial_best_k",
@@ -759,6 +763,7 @@ class BenchmarkTable(QtWidgets.QTableWidget):
             "median_xy_error": "median err",
             "p90_xy_error": "p90 err",
             "coverage": "coverage",
+            "pred_spread_ratio": "pred spread",
             "median_vs_spatial_best": "vs spatial best",
             "median_vs_spatial_same_k": "vs spatial same k",
             "spatial_best_k": "spatial best k",

@@ -26,11 +26,14 @@ K = 4
 BENCH_K_VALUES = (1, 2, 3, 4, 5, 8, 12, 16, 24, 32)
 EXPRESSION_PCS = 30
 LEARNED_MIX_NAME = "learned_mix"
-LEARNED_BASE_MEASUREMENTS = ("expression", "morphology", "seq_jaccard")
+LEARNED_BASE_MEASUREMENTS = ("expression", "morphology", "seq_jaccard", "seq_jaccard_all")
 LEARNED_WEIGHT_VALUES = (0.0, 0.25, 0.5, 1.0, 2.0)
 LEARNED_MIN_COVERAGE = 0.95
 LEARNED_SCORE_MODE = "median_p90"
 LEARNED_P90_WEIGHT = 0.25
+
+BEST_K_MIN_PRED_SPREAD_RATIO = 0.35
+LEARNED_MIN_PRED_SPREAD_RATIO = 0.35
 
 USE_NEIGHBOR_CUTOFF = True
 CUTOFF_QUANTILE = 0.995
@@ -142,6 +145,37 @@ def top_gene_ids(x, n=32):
 
     return out
 
+def detected_gene_ids(x):
+    out = []
+    x = x.tocsr() if sp.issparse(x) else np.asarray(x)
+
+    for i in range(x.shape[0]):
+        row = x.getrow(i) if sp.issparse(x) else x[i]
+
+        if sp.issparse(row):
+            idx = row.indices
+        else:
+            idx = np.flatnonzero(row)
+
+        if len(idx) == 0:
+            out.append("")
+            continue
+
+        out.append(" ".join(str(int(v)) for v in idx))
+
+    return out
+
+def jaccard_distance(a, b):
+    a = set(a)
+    b = set(b)
+
+    u = len(a | b)
+
+    if u == 0:
+        return 0.0
+
+    return 1.0 - len(a & b) / u
+
 def log_norm_matrix(x, target_sum=10000.0):
     total = np.asarray(x.sum(axis=1)).ravel().astype(np.float32)
     scale = target_sum / np.maximum(total, 1.0)
@@ -197,12 +231,17 @@ def make_pairs_all_pairs(nodes, blocks, measurement):
     return pd.DataFrame(rows, columns=["source", "target", "distance"])
 
 def make_pairs_sequence_all_pairs(nodes, measurement):
-    seqs = [parse_seq_ids(v) for v in nodes["top_gene_ids"].to_numpy()]
+    col = "detected_gene_ids" if measurement == "seq_jaccard_all" else "top_gene_ids"
+    seqs = [parse_seq_ids(v) for v in nodes[col].to_numpy()]
     rows = []
 
     for i in tqdm(range(len(seqs)), desc=f"pairs {measurement}"):
         for j in range(i + 1, len(seqs)):
-            d = sequence_distance(seqs[i], seqs[j], measurement)
+            if measurement in {"seq_jaccard", "seq_jaccard_all"}:
+                d = jaccard_distance(seqs[i], seqs[j])
+            else:
+                d = sequence_distance(seqs[i], seqs[j], measurement)
+
             rows.append((i, j, float(d)))
 
     return pd.DataFrame(rows, columns=["source", "target", "distance"])
@@ -405,6 +444,16 @@ def prediction_from_edges(dataset_id, nodes, edges, measurement, k):
     center_err = np.sqrt(((xy - center) ** 2).sum(axis=1))
     ok_err = err[ok]
 
+    real_spread = float(np.sqrt(np.var(xy[:, 0]) + np.var(xy[:, 1]))) if n else 0.0
+
+    if ok.any():
+        pred_ok = pred[ok]
+        pred_spread = float(np.sqrt(np.nanvar(pred_ok[:, 0]) + np.nanvar(pred_ok[:, 1])))
+    else:
+        pred_spread = 0.0
+
+    pred_spread_ratio = pred_spread / real_spread if real_spread > 0 else None
+
     row = {
         "dataset": dataset_id,
         "measurement": measurement,
@@ -414,6 +463,9 @@ def prediction_from_edges(dataset_id, nodes, edges, measurement, k):
         "n_nodes": int(n),
         "n_edges": int(len(edges)),
         "coverage": float(ok.mean()) if n else 0.0,
+        "real_spread": real_spread,
+        "pred_spread": pred_spread,
+        "pred_spread_ratio": pred_spread_ratio,
         "mean_xy_error": float(ok_err.mean()) if len(ok_err) else None,
         "median_xy_error": float(np.median(ok_err)) if len(ok_err) else None,
         "p90_xy_error": float(np.quantile(ok_err, 0.90)) if len(ok_err) else None,
@@ -549,6 +601,11 @@ def best_k_by_measurement(df, min_coverage=0.95):
         (~df["leaky"])
         & (df["coverage"] >= float(min_coverage))
     ].copy()
+
+    if "pred_spread_ratio" in clean.columns:
+        strict = clean[clean["pred_spread_ratio"] >= BEST_K_MIN_PRED_SPREAD_RATIO].copy()
+        if not strict.empty:
+            clean = strict
 
     clean = clean.dropna(subset=["median_vs_spatial_best", "median_xy_error"])
 
@@ -695,7 +752,12 @@ def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_value
 
             rows.append(row)
 
-            if row["coverage"] >= LEARNED_MIN_COVERAGE and row["median_xy_error"] is not None:
+            spread_ok = (
+                row.get("pred_spread_ratio") is None
+                or row.get("pred_spread_ratio") >= LEARNED_MIN_PRED_SPREAD_RATIO
+            )
+
+            if row["coverage"] >= LEARNED_MIN_COVERAGE and spread_ok and row["median_xy_error"] is not None:
                 median_err = float(row["median_xy_error"])
 
                 if row["p90_xy_error"] is None or not np.isfinite(row["p90_xy_error"]):
@@ -726,7 +788,14 @@ def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_value
 
     top = grid.copy()
     top["score"] = top["median_xy_error"] + LEARNED_P90_WEIGHT * top["p90_xy_error"]
-    top = top.sort_values(["score", "median_xy_error", "p90_xy_error", "k"]).head(30)
+
+    if "pred_spread_ratio" in top.columns:
+        top = top.sort_values(
+            ["score", "median_xy_error", "p90_xy_error", "pred_spread_ratio", "k"],
+            ascending=[True, True, True, False, True],
+        ).head(30)
+    else:
+        top = top.sort_values(["score", "median_xy_error", "p90_xy_error", "k"]).head(30)
     top.to_csv(out_dir / "learned_mix_top.csv", index=False)
 
     if best_item is None:
@@ -842,6 +911,7 @@ def main():
 
     nodes = make_nodes(adata)
     nodes["top_gene_ids"] = top_gene_ids(adata.X, TOP_GENES_PER_CELL)
+    nodes["detected_gene_ids"] = detected_gene_ids(adata.X)
     blocks = build_blocks(adata, nodes, EXPRESSION_PCS)
 
     expr_cols = []
@@ -850,7 +920,7 @@ def main():
         nodes[col] = blocks["expression"][:, i]
         expr_cols.append(col)
 
-    node_cols = NODE_BASE_COLS + ["top_gene_ids"] + expr_cols
+    node_cols = NODE_BASE_COLS + ["top_gene_ids", "detected_gene_ids"] + expr_cols
     nodes[node_cols].to_csv(out_dir / "nodes.csv", index=False)
 
     summaries = {}
