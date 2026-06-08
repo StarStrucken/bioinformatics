@@ -6,31 +6,64 @@
   "n_cells_dumped": 632,
   "n_genes": 403,
   "k": 4,
+  "bench_k_values": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    8,
+    12,
+    16,
+    24,
+    32
+  ],
+  "learned_mix_name": "learned_mix",
+  "learned_base_measurements": [
+    "expression",
+    "morphology",
+    "seq_jaccard"
+  ],
+  "learned_weight_values": [
+    0.0,
+    0.25,
+    0.5,
+    1.0,
+    2.0
+  ],
+  "learned_min_coverage": 0.95,
   "expression_pcs": 30,
   "use_neighbor_cutoff": true,
   "cutoff_quantile": 0.995,
   "cutoff_mad": 8.0,
   "min_edges_per_node": 0,
   "measurements": [
-    "spatial",
     "expression",
     "morphology",
     "expr_morph",
-    "expr_morph_spatial",
-    "mix_nonspatial",
-    "mix",
     "morph_heavy",
     "seq_jaccard",
-    "seq_local",
-    "seq_blast"
+    "spatial"
+  ],
+  "visible_measurements": [
+    "expression",
+    "morphology",
+    "expr_morph",
+    "morph_heavy",
+    "seq_jaccard"
+  ],
+  "hidden_measurements": [
+    "spatial"
+  ],
+  "active_measurements": [
+    "expression",
+    "morphology",
+    "expr_morph",
+    "morph_heavy",
+    "seq_jaccard",
+    "spatial"
   ],
   "measurement_defs": {
-    "spatial": {
-      "label": "spatial",
-      "blocks": {
-        "spatial": 1.0
-      }
-    },
     "expression": {
       "label": "expression",
       "blocks": {
@@ -50,30 +83,6 @@
         "morphology": 1.0
       }
     },
-    "expr_morph_spatial": {
-      "label": "expression+morphology+spatial",
-      "blocks": {
-        "expression": 1.0,
-        "morphology": 1.0,
-        "spatial": 1.0
-      }
-    },
-    "mix_nonspatial": {
-      "label": "mix_nonspatial",
-      "blocks": {
-        "spatial": 0.0,
-        "expression": 1.0,
-        "morphology": 1.0
-      }
-    },
-    "mix": {
-      "label": "mix",
-      "blocks": {
-        "spatial": 1.0,
-        "expression": 1.0,
-        "morphology": 1.0
-      }
-    },
     "morph_heavy": {
       "label": "morph_heavy",
       "blocks": {
@@ -86,13 +95,11 @@
       "label": "seq_jaccard",
       "blocks": {}
     },
-    "seq_local": {
-      "label": "seq_local",
-      "blocks": {}
-    },
-    "seq_blast": {
-      "label": "seq_blast",
-      "blocks": {}
+    "spatial": {
+      "label": "spatial",
+      "blocks": {
+        "spatial": 1.0
+      }
     }
   },
   "node_columns": [
@@ -155,21 +162,6 @@
     "same_component"
   ],
   "edge_summaries": {
-    "spatial": {
-      "measurement": "spatial",
-      "label": "spatial",
-      "n_nodes": 632,
-      "n_edges": 1470,
-      "n_components": 3,
-      "largest_component": 299,
-      "singletons": 0,
-      "neighbor_distance_median": 0.04723718762397766,
-      "neighbor_distance_max": 0.09696260839700699,
-      "neighbor_cutoff": 0.0973304957151413,
-      "raw_directed_edges": 1478,
-      "kept_directed_edges": 1470,
-      "pruned_directed_edges": 8
-    },
     "expression": {
       "measurement": "expression",
       "label": "expression",
@@ -215,51 +207,6 @@
       "kept_directed_edges": 2114,
       "pruned_directed_edges": 11
     },
-    "expr_morph_spatial": {
-      "measurement": "expr_morph_spatial",
-      "label": "expression+morphology+spatial",
-      "n_nodes": 632,
-      "n_edges": 2097,
-      "n_components": 2,
-      "largest_component": 631,
-      "singletons": 1,
-      "neighbor_distance_median": 5.617011547088623,
-      "neighbor_distance_max": 7.512293338775635,
-      "neighbor_cutoff": 7.531805992126465,
-      "raw_directed_edges": 2108,
-      "kept_directed_edges": 2097,
-      "pruned_directed_edges": 11
-    },
-    "mix_nonspatial": {
-      "measurement": "mix_nonspatial",
-      "label": "mix_nonspatial",
-      "n_nodes": 632,
-      "n_edges": 2114,
-      "n_components": 2,
-      "largest_component": 631,
-      "singletons": 1,
-      "neighbor_distance_median": 5.462214469909668,
-      "neighbor_distance_max": 7.404336929321289,
-      "neighbor_cutoff": 7.407201766967773,
-      "raw_directed_edges": 2125,
-      "kept_directed_edges": 2114,
-      "pruned_directed_edges": 11
-    },
-    "mix": {
-      "measurement": "mix",
-      "label": "mix",
-      "n_nodes": 632,
-      "n_edges": 2097,
-      "n_components": 2,
-      "largest_component": 631,
-      "singletons": 1,
-      "neighbor_distance_median": 5.617011547088623,
-      "neighbor_distance_max": 7.512293815612793,
-      "neighbor_cutoff": 7.531806468963623,
-      "raw_directed_edges": 2108,
-      "kept_directed_edges": 2097,
-      "pruned_directed_edges": 11
-    },
     "morph_heavy": {
       "measurement": "morph_heavy",
       "label": "morph_heavy",
@@ -290,35 +237,35 @@
       "kept_directed_edges": 2262,
       "pruned_directed_edges": 8
     },
-    "seq_local": {
-      "measurement": "seq_local",
-      "label": "seq_local",
+    "spatial": {
+      "measurement": "spatial",
+      "label": "spatial",
       "n_nodes": 632,
-      "n_edges": 1891,
-      "n_components": 1,
-      "largest_component": 632,
+      "n_edges": 1470,
+      "n_components": 3,
+      "largest_component": 299,
       "singletons": 0,
-      "neighbor_distance_median": 0.890625,
-      "neighbor_distance_max": 0.921875,
-      "neighbor_cutoff": 0.921875,
-      "raw_directed_edges": 1893,
-      "kept_directed_edges": 1891,
-      "pruned_directed_edges": 2
+      "neighbor_distance_median": 0.04723718762397766,
+      "neighbor_distance_max": 0.09696260839700699,
+      "neighbor_cutoff": 0.0973304957151413,
+      "raw_directed_edges": 1478,
+      "kept_directed_edges": 1470,
+      "pruned_directed_edges": 8
     },
-    "seq_blast": {
-      "measurement": "seq_blast",
-      "label": "seq_blast",
+    "learned_mix": {
+      "measurement": "learned_mix",
+      "label": "learned_expression1_morphology0_seq_jaccard1",
       "n_nodes": 632,
-      "n_edges": 1817,
-      "n_components": 1,
-      "largest_component": 632,
-      "singletons": 0,
-      "neighbor_distance_median": 0.9111096398305085,
-      "neighbor_distance_max": 0.9417473118279569,
-      "neighbor_cutoff": 0.9434810280799866,
-      "raw_directed_edges": 1828,
-      "kept_directed_edges": 1817,
-      "pruned_directed_edges": 11
+      "n_edges": 2252,
+      "n_components": 3,
+      "largest_component": 630,
+      "singletons": 2,
+      "neighbor_distance_median": 1.0301073789596558,
+      "neighbor_distance_max": 1.421496868133545,
+      "neighbor_cutoff": 1.4223040342330933,
+      "raw_directed_edges": 2264,
+      "kept_directed_edges": 2252,
+      "pruned_directed_edges": 12
     }
   }
 }
