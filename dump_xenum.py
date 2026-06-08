@@ -13,7 +13,7 @@ from sklearn.decomposition import TruncatedSVD, PCA
 from sklearn.neighbors import NearestNeighbors
 
 from xenum_common import zscore, parse_seq_ids, sequence_distance
-from xenum_measurements import MEASUREMENTS
+from xenum_measurements import ACTIVE_MEASUREMENTS, HIDDEN_MEASUREMENTS, LEAKY_MEASUREMENTS, MEASUREMENTS, VISIBLE_MEASUREMENTS
 from xenum_paths import data_dir, out_dir as make_out_dir
 
 try:
@@ -23,7 +23,17 @@ except Exception:
         return x
 
 K = 4
+BENCH_K_VALUES = (1, 2, 3, 4, 5, 8, 12, 16, 24, 32)
 EXPRESSION_PCS = 30
+LEARNED_MIX_NAME = "learned_mix"
+LEARNED_BASE_MEASUREMENTS = ("expression", "morphology", "seq_jaccard", "seq_jaccard_all")
+LEARNED_WEIGHT_VALUES = (0.0, 0.25, 0.5, 1.0, 2.0)
+LEARNED_MIN_COVERAGE = 0.95
+LEARNED_SCORE_MODE = "median_p90"
+LEARNED_P90_WEIGHT = 0.25
+
+BEST_K_MIN_PRED_SPREAD_RATIO = 0.35
+LEARNED_MIN_PRED_SPREAD_RATIO = 0.35
 
 USE_NEIGHBOR_CUTOFF = True
 CUTOFF_QUANTILE = 0.995
@@ -135,6 +145,37 @@ def top_gene_ids(x, n=32):
 
     return out
 
+def detected_gene_ids(x):
+    out = []
+    x = x.tocsr() if sp.issparse(x) else np.asarray(x)
+
+    for i in range(x.shape[0]):
+        row = x.getrow(i) if sp.issparse(x) else x[i]
+
+        if sp.issparse(row):
+            idx = row.indices
+        else:
+            idx = np.flatnonzero(row)
+
+        if len(idx) == 0:
+            out.append("")
+            continue
+
+        out.append(" ".join(str(int(v)) for v in idx))
+
+    return out
+
+def jaccard_distance(a, b):
+    a = set(a)
+    b = set(b)
+
+    u = len(a | b)
+
+    if u == 0:
+        return 0.0
+
+    return 1.0 - len(a & b) / u
+
 def log_norm_matrix(x, target_sum=10000.0):
     total = np.asarray(x.sum(axis=1)).ravel().astype(np.float32)
     scale = target_sum / np.maximum(total, 1.0)
@@ -190,12 +231,17 @@ def make_pairs_all_pairs(nodes, blocks, measurement):
     return pd.DataFrame(rows, columns=["source", "target", "distance"])
 
 def make_pairs_sequence_all_pairs(nodes, measurement):
-    seqs = [parse_seq_ids(v) for v in nodes["top_gene_ids"].to_numpy()]
+    col = "detected_gene_ids" if measurement == "seq_jaccard_all" else "top_gene_ids"
+    seqs = [parse_seq_ids(v) for v in nodes[col].to_numpy()]
     rows = []
 
     for i in tqdm(range(len(seqs)), desc=f"pairs {measurement}"):
         for j in range(i + 1, len(seqs)):
-            d = sequence_distance(seqs[i], seqs[j], measurement)
+            if measurement in {"seq_jaccard", "seq_jaccard_all"}:
+                d = jaccard_distance(seqs[i], seqs[j])
+            else:
+                d = sequence_distance(seqs[i], seqs[j], measurement)
+
             rows.append((i, j, float(d)))
 
     return pd.DataFrame(rows, columns=["source", "target", "distance"])
@@ -214,8 +260,8 @@ def load_or_make_pairs(out_dir, nodes, blocks, measurement):
     pairs.to_parquet(path, index=False)
     return pairs
 
-def edges_from_pairs(nodes, blocks, measurement, pairs, k):
-    best = [[] for _ in range(len(nodes))]
+def neighbor_lists_from_pairs(n, pairs):
+    best = [[] for _ in range(n)]
 
     for r in pairs.itertuples(index=False):
         a = int(r.source)
@@ -224,15 +270,23 @@ def edges_from_pairs(nodes, blocks, measurement, pairs, k):
         best[a].append((b, d))
         best[b].append((a, d))
 
-    rows = []
-    for i, vals in enumerate(best):
+    for vals in best:
         vals.sort(key=lambda x: x[1])
-        for j, d in vals[:k]:
+
+    return best
+
+def edges_from_neighbor_lists(nodes, blocks, measurement, best, k):
+    rows = []
+
+    for i, vals in enumerate(best):
+        for j, d in vals[:int(k)]:
             rows.append((min(i, j), max(i, j), d))
 
     edges = pd.DataFrame(rows, columns=["source", "target", "neighbor_distance"])
-    edges = edges.sort_values("neighbor_distance").drop_duplicates(["source", "target"])
-    edges = edges.sort_values(["source", "target"]).reset_index(drop=True)
+
+    if len(edges):
+        edges = edges.sort_values("neighbor_distance").drop_duplicates(["source", "target"])
+        edges = edges.sort_values(["source", "target"]).reset_index(drop=True)
 
     cutoff = auto_neighbor_cutoff(
         edges["neighbor_distance"].to_numpy(),
@@ -251,6 +305,10 @@ def edges_from_pairs(nodes, blocks, measurement, pairs, k):
     edges.attrs["pruned_directed_edges"] = raw_edges - len(edges)
 
     return finish_edges(nodes, blocks, measurement, edges)
+
+def edges_from_pairs(nodes, blocks, measurement, pairs, k):
+    best = neighbor_lists_from_pairs(len(nodes), pairs)
+    return edges_from_neighbor_lists(nodes, blocks, measurement, best, k)
 
 def build_blocks(adata, nodes, n_pcs):
     spatial = zscore(nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32))
@@ -353,6 +411,474 @@ def checks(nodes, graph_nodes, edges, measurement):
         "pruned_directed_edges": edges.attrs.get("pruned_directed_edges"),
     }
 
+def prediction_from_edges(dataset_id, nodes, edges, measurement, k):
+    xy = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
+    n = len(nodes)
+
+    sx = np.zeros(n, dtype=np.float64)
+    sy = np.zeros(n, dtype=np.float64)
+    cnt = np.zeros(n, dtype=np.int64)
+
+    for r in edges.itertuples(index=False):
+        a = int(r.source)
+        b = int(r.target)
+
+        sx[a] += xy[b, 0]
+        sy[a] += xy[b, 1]
+        cnt[a] += 1
+
+        sx[b] += xy[a, 0]
+        sy[b] += xy[a, 1]
+        cnt[b] += 1
+
+    ok = cnt > 0
+    pred = np.full((n, 2), np.nan, dtype=np.float32)
+    pred[ok, 0] = sx[ok] / cnt[ok]
+    pred[ok, 1] = sy[ok] / cnt[ok]
+
+    dx = pred[:, 0] - xy[:, 0]
+    dy = pred[:, 1] - xy[:, 1]
+    err = np.sqrt(dx * dx + dy * dy)
+
+    center = xy.mean(axis=0)
+    center_err = np.sqrt(((xy - center) ** 2).sum(axis=1))
+    ok_err = err[ok]
+
+    real_spread = float(np.sqrt(np.var(xy[:, 0]) + np.var(xy[:, 1]))) if n else 0.0
+
+    if ok.any():
+        pred_ok = pred[ok]
+        pred_spread = float(np.sqrt(np.nanvar(pred_ok[:, 0]) + np.nanvar(pred_ok[:, 1])))
+    else:
+        pred_spread = 0.0
+
+    pred_spread_ratio = pred_spread / real_spread if real_spread > 0 else None
+
+    row = {
+        "dataset": dataset_id,
+        "measurement": measurement,
+        "label": MEASUREMENTS[measurement]["label"],
+        "k": int(k),
+        "leaky": measurement in LEAKY_MEASUREMENTS,
+        "n_nodes": int(n),
+        "n_edges": int(len(edges)),
+        "coverage": float(ok.mean()) if n else 0.0,
+        "real_spread": real_spread,
+        "pred_spread": pred_spread,
+        "pred_spread_ratio": pred_spread_ratio,
+        "mean_xy_error": float(ok_err.mean()) if len(ok_err) else None,
+        "median_xy_error": float(np.median(ok_err)) if len(ok_err) else None,
+        "p90_xy_error": float(np.quantile(ok_err, 0.90)) if len(ok_err) else None,
+        "center_median_error": float(np.median(center_err)) if len(center_err) else None,
+        "median_vs_center": float(np.median(ok_err) / np.median(center_err)) if len(ok_err) and np.median(center_err) > 0 else None,
+    }
+
+    pred_df = pd.DataFrame({
+        "node": np.arange(n, dtype=np.int64),
+        "cell_id": nodes["cell_id"].to_numpy(dtype=str),
+        "x": xy[:, 0],
+        "y": xy[:, 1],
+        "pred_x": pred[:, 0],
+        "pred_y": pred[:, 1],
+        "dx": dx,
+        "dy": dy,
+        "error": err,
+        "used_neighbors": cnt,
+        "measurement": measurement,
+        "k": int(k),
+    })
+
+    return pred_df, row
+
+def add_spatial_reference(df):
+    df = df.copy()
+
+    spatial = (
+        df[df["measurement"] == "spatial"]
+        [[
+            "dataset",
+            "k",
+            "median_xy_error",
+            "mean_xy_error",
+            "p90_xy_error",
+        ]]
+        .rename(columns={
+            "median_xy_error": "spatial_median_xy_error_same_k",
+            "mean_xy_error": "spatial_mean_xy_error_same_k",
+            "p90_xy_error": "spatial_p90_xy_error_same_k",
+        })
+    )
+
+    df = df.merge(spatial, on=["dataset", "k"], how="left")
+
+    df["median_vs_spatial_same_k"] = np.divide(
+        df["median_xy_error"],
+        df["spatial_median_xy_error_same_k"],
+        out=np.full(len(df), np.nan, dtype=float),
+        where=df["spatial_median_xy_error_same_k"].to_numpy(dtype=float) > 0,
+    )
+
+    best_spatial = (
+        spatial
+        .sort_values(["dataset", "spatial_median_xy_error_same_k"])
+        .groupby("dataset")
+        .head(1)
+        [[
+            "dataset",
+            "k",
+            "spatial_median_xy_error_same_k",
+        ]]
+        .rename(columns={
+            "k": "spatial_best_k",
+            "spatial_median_xy_error_same_k": "spatial_best_median_xy_error",
+        })
+    )
+
+    df = df.merge(best_spatial, on="dataset", how="left")
+
+    df["median_vs_spatial_best"] = np.divide(
+        df["median_xy_error"],
+        df["spatial_best_median_xy_error"],
+        out=np.full(len(df), np.nan, dtype=float),
+        where=df["spatial_best_median_xy_error"].to_numpy(dtype=float) > 0,
+    )
+
+    return df
+
+def summarize_benchmarks(df):
+    clean = df[~df["leaky"]].copy()
+    clean = clean.dropna(subset=["median_vs_spatial_best"])
+
+    if clean.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    clean["rank"] = clean.groupby("dataset")["median_vs_spatial_best"].rank(method="min")
+
+    summary = (
+        clean
+        .groupby(["measurement", "k"])
+        .agg(
+            datasets=("dataset", "nunique"),
+            wins=("rank", lambda x: int((x == 1).sum())),
+            rank_mean=("rank", "mean"),
+            median_xy_error_median=("median_xy_error", "median"),
+            p90_xy_error_median=("p90_xy_error", "median"),
+            coverage_mean=("coverage", "mean"),
+            median_vs_spatial_best_mean=("median_vs_spatial_best", "mean"),
+            median_vs_spatial_best_median=("median_vs_spatial_best", "median"),
+            median_vs_spatial_same_k_median=("median_vs_spatial_same_k", "median"),
+        )
+        .reset_index()
+        .sort_values(
+            ["wins", "rank_mean", "median_vs_spatial_best_median"],
+            ascending=[False, True, True],
+        )
+    )
+
+    best = (
+        clean
+        .sort_values(["dataset", "median_vs_spatial_best", "median_xy_error"])
+        .groupby("dataset")
+        .head(1)
+        [[
+            "dataset",
+            "measurement",
+            "k",
+            "median_xy_error",
+            "p90_xy_error",
+            "coverage",
+            "median_vs_spatial_best",
+            "median_vs_spatial_same_k",
+            "spatial_best_k",
+            "spatial_best_median_xy_error",
+        ]]
+    )
+
+    return summary, best
+
+def best_k_by_measurement(df, min_coverage=0.95):
+    clean = df[
+        (~df["leaky"])
+        & (df["coverage"] >= float(min_coverage))
+    ].copy()
+
+    if "pred_spread_ratio" in clean.columns:
+        strict = clean[clean["pred_spread_ratio"] >= BEST_K_MIN_PRED_SPREAD_RATIO].copy()
+        if not strict.empty:
+            clean = strict
+
+    clean = clean.dropna(subset=["median_vs_spatial_best", "median_xy_error"])
+
+    if clean.empty:
+        return pd.DataFrame()
+
+    best = (
+        clean
+        .sort_values(["measurement", "median_vs_spatial_best", "median_xy_error"])
+        .groupby("measurement")
+        .head(1)
+        [[
+            "measurement",
+            "k",
+            "median_xy_error",
+            "p90_xy_error",
+            "coverage",
+            "median_vs_spatial_best",
+            "median_vs_spatial_same_k",
+            "spatial_best_k",
+            "spatial_best_median_xy_error",
+        ]]
+        .reset_index(drop=True)
+    )
+
+    return best
+
+def learned_weight_grid(names, values):
+    import itertools
+
+    seen = set()
+
+    for vals in itertools.product(values, repeat=len(names)):
+        vals = [float(v) for v in vals]
+
+        if all(v == 0.0 for v in vals):
+            continue
+
+        mx = max(vals)
+
+        if mx <= 0:
+            continue
+
+        norm = tuple(round(v / mx, 8) for v in vals)
+
+        if norm in seen:
+            continue
+
+        seen.add(norm)
+        yield dict(zip(names, norm))
+
+def learned_label(weights):
+    parts = []
+
+    for k, v in weights.items():
+        parts.append(f"{k}{v:g}")
+
+    return "learned_" + "_".join(parts)
+
+def normalized_pair_distances(pairs):
+    d = pairs["distance"].to_numpy(dtype=np.float32)
+    ok = np.isfinite(d) & (d > 0)
+
+    if ok.any():
+        scale = float(np.median(d[ok]))
+    else:
+        scale = 1.0
+
+    if scale <= 0 or not np.isfinite(scale):
+        scale = 1.0
+
+    return d / scale
+
+def combine_pair_tables(pair_tables, weights):
+    first = pair_tables[next(iter(weights))]
+    src = first["source"].to_numpy(dtype=np.int64)
+    dst = first["target"].to_numpy(dtype=np.int64)
+
+    acc = np.zeros(len(first), dtype=np.float32)
+
+    for name, w in weights.items():
+        pairs = pair_tables[name]
+
+        if not (
+            np.array_equal(src, pairs["source"].to_numpy(dtype=np.int64))
+            and np.array_equal(dst, pairs["target"].to_numpy(dtype=np.int64))
+        ):
+            raise RuntimeError(f"pair order mismatch for {name}")
+
+        d = normalized_pair_distances(pairs)
+        acc += (float(w) * d) ** 2
+
+    out = pd.DataFrame({
+        "source": src,
+        "target": dst,
+        "distance": np.sqrt(acc).astype(np.float32),
+    })
+
+    return out
+
+def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_values):
+    pair_tables = {}
+
+    for m in LEARNED_BASE_MEASUREMENTS:
+        pair_tables[m] = load_or_make_pairs(out_dir, nodes[node_cols], blocks, m)
+
+    rows = []
+    best_item = None
+
+    MEASUREMENTS[LEARNED_MIX_NAME] = {
+        "label": LEARNED_MIX_NAME,
+        "blocks": {},
+    }
+
+    for weights in tqdm(
+        list(learned_weight_grid(LEARNED_BASE_MEASUREMENTS, LEARNED_WEIGHT_VALUES)),
+        desc="learned mix",
+    ):
+        label = learned_label(weights)
+        pairs = combine_pair_tables(pair_tables, weights)
+        best = neighbor_lists_from_pairs(len(nodes), pairs)
+
+        for kk in bench_k_values:
+            edges, graph_nodes = edges_from_neighbor_lists(
+                nodes[node_cols],
+                blocks,
+                LEARNED_MIX_NAME,
+                best,
+                kk,
+            )
+
+            pred_df, row = prediction_from_edges(
+                dataset_id,
+                nodes[node_cols],
+                edges,
+                LEARNED_MIX_NAME,
+                kk,
+            )
+
+            row["label"] = label
+
+            for name, w in weights.items():
+                row[f"weight_{name}"] = float(w)
+
+            rows.append(row)
+
+            spread_ok = (
+                row.get("pred_spread_ratio") is None
+                or row.get("pred_spread_ratio") >= LEARNED_MIN_PRED_SPREAD_RATIO
+            )
+
+            if row["coverage"] >= LEARNED_MIN_COVERAGE and spread_ok and row["median_xy_error"] is not None:
+                median_err = float(row["median_xy_error"])
+
+                if row["p90_xy_error"] is None or not np.isfinite(row["p90_xy_error"]):
+                    p90_err = np.inf
+                else:
+                    p90_err = float(row["p90_xy_error"])
+
+                main_score = median_err + LEARNED_P90_WEIGHT * p90_err
+
+                score = (
+                    main_score,
+                    median_err,
+                    p90_err,
+                    int(kk),
+                    label,
+                )
+
+                item = {
+                    "score": score,
+                    "weights": weights.copy(),
+                }
+
+                if best_item is None or score < best_item["score"]:
+                    best_item = item
+
+    grid = pd.DataFrame(rows)
+    grid.to_csv(out_dir / "learned_mix_grid.csv", index=False)
+
+    top = grid.copy()
+    top["score"] = top["median_xy_error"] + LEARNED_P90_WEIGHT * top["p90_xy_error"]
+
+    if "pred_spread_ratio" in top.columns:
+        top = top.sort_values(
+            ["score", "median_xy_error", "p90_xy_error", "pred_spread_ratio", "k"],
+            ascending=[True, True, True, False, True],
+        ).head(30)
+    else:
+        top = top.sort_values(["score", "median_xy_error", "p90_xy_error", "k"]).head(30)
+    top.to_csv(out_dir / "learned_mix_top.csv", index=False)
+
+    if best_item is None:
+        return [], {}
+
+    best_weights = best_item["weights"]
+    best_label = learned_label(best_weights)
+
+    MEASUREMENTS[LEARNED_MIX_NAME] = {
+        "label": best_label,
+        "blocks": {},
+    }
+
+    pairs = combine_pair_tables(pair_tables, best_weights)
+    pairs.to_parquet(out_dir / "pairs_learned_mix.parquet", index=False)
+
+    best = neighbor_lists_from_pairs(len(nodes), pairs)
+
+    bench_rows = []
+    summaries = {}
+
+    for kk in bench_k_values:
+        edges, graph_nodes = edges_from_neighbor_lists(
+            nodes[node_cols],
+            blocks,
+            LEARNED_MIX_NAME,
+            best,
+            kk,
+        )
+
+        chk = checks(nodes, graph_nodes, edges, LEARNED_MIX_NAME)
+        pred_df, bench_row = prediction_from_edges(
+            dataset_id,
+            nodes[node_cols],
+            edges,
+            LEARNED_MIX_NAME,
+            kk,
+        )
+
+        bench_row["label"] = best_label
+
+        for name, w in best_weights.items():
+            bench_row[f"weight_{name}"] = float(w)
+
+        bench_rows.append(bench_row)
+
+        graph_nodes.to_csv(out_dir / f"nodes_{LEARNED_MIX_NAME}_k{kk}.csv", index=False)
+        edges.to_csv(out_dir / f"edges_{LEARNED_MIX_NAME}_k{kk}.csv", index=False)
+        pred_df.to_csv(out_dir / f"predictions_{LEARNED_MIX_NAME}_k{kk}.csv", index=False)
+        (out_dir / f"checks_{LEARNED_MIX_NAME}_k{kk}.json").write_text(json.dumps(chk, indent=2) + "\n")
+
+        if kk == int(K):
+            graph_nodes.to_csv(out_dir / f"nodes_{LEARNED_MIX_NAME}.csv", index=False)
+            edges.to_csv(out_dir / f"edges_{LEARNED_MIX_NAME}.csv", index=False)
+            (out_dir / f"checks_{LEARNED_MIX_NAME}.json").write_text(json.dumps(chk, indent=2) + "\n")
+            write_npz(out_dir, LEARNED_MIX_NAME, graph_nodes, edges)
+            summaries[LEARNED_MIX_NAME] = chk
+
+    payload = {
+        "measurement": LEARNED_MIX_NAME,
+        "label": best_label,
+        "weights": best_weights,
+        "base_measurements": list(LEARNED_BASE_MEASUREMENTS),
+        "weight_values": list(LEARNED_WEIGHT_VALUES),
+        "min_coverage": float(LEARNED_MIN_COVERAGE),
+        "p90_weight": float(LEARNED_P90_WEIGHT),
+    }
+
+    (out_dir / "learned_mix_weights.json").write_text(json.dumps(payload, indent=2) + "\n")
+
+    return bench_rows, summaries
+
+def parse_k_list(s):
+    vals = []
+
+    for part in str(s).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        vals.append(int(part))
+
+    return vals
+
 def write_npz(out_dir, measurement, graph_nodes, edges):
     node_features = graph_nodes[["log_total_counts", "log_detected_genes", "cell_area", "nucleus_area", "nucleus_cell_ratio", "component_id", "component_size"]].to_numpy(dtype=np.float32)
     pos = graph_nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
@@ -373,7 +899,6 @@ def write_npz(out_dir, measurement, graph_nodes, edges):
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("dataset_id")
-    p.add_argument("--k", type=int, default=K)
     return p.parse_args()
 
 def main():
@@ -386,6 +911,7 @@ def main():
 
     nodes = make_nodes(adata)
     nodes["top_gene_ids"] = top_gene_ids(adata.X, TOP_GENES_PER_CELL)
+    nodes["detected_gene_ids"] = detected_gene_ids(adata.X)
     blocks = build_blocks(adata, nodes, EXPRESSION_PCS)
 
     expr_cols = []
@@ -394,45 +920,123 @@ def main():
         nodes[col] = blocks["expression"][:, i]
         expr_cols.append(col)
 
-    node_cols = NODE_BASE_COLS + ["top_gene_ids"] + expr_cols
+    node_cols = NODE_BASE_COLS + ["top_gene_ids", "detected_gene_ids"] + expr_cols
     nodes[node_cols].to_csv(out_dir / "nodes.csv", index=False)
 
     summaries = {}
+    bench_rows = []
+    bench_k_values = sorted(set([int(K), *BENCH_K_VALUES]))
+    measurement_names = list(ACTIVE_MEASUREMENTS)
 
-    for m in tqdm(list(MEASUREMENTS), desc="graphs"):
+    for m in tqdm(measurement_names, desc="graphs"):
         pairs = load_or_make_pairs(out_dir, nodes[node_cols], blocks, m)
-        edges, graph_nodes = edges_from_pairs(
-            nodes[node_cols],
-            blocks,
-            m,
-            pairs,
-            args.k,
-        )
+        best = neighbor_lists_from_pairs(len(nodes), pairs)
 
-        chk = checks(nodes, graph_nodes, edges, m)
+        for kk in bench_k_values:
+            edges, graph_nodes = edges_from_neighbor_lists(
+                nodes[node_cols],
+                blocks,
+                m,
+                best,
+                kk,
+            )
 
-        graph_nodes.to_csv(out_dir / f"nodes_{m}.csv", index=False)
-        edges.to_csv(out_dir / f"edges_{m}.csv", index=False)
-        (out_dir / f"checks_{m}.json").write_text(json.dumps(chk, indent=2) + "\n")
+            chk = checks(nodes, graph_nodes, edges, m)
+            pred_df, bench_row = prediction_from_edges(args.dataset_id, nodes[node_cols], edges, m, kk)
+            bench_rows.append(bench_row)
 
-        write_npz(out_dir, m, graph_nodes, edges)
+            graph_nodes.to_csv(out_dir / f"nodes_{m}_k{kk}.csv", index=False)
+            edges.to_csv(out_dir / f"edges_{m}_k{kk}.csv", index=False)
+            pred_df.to_csv(out_dir / f"predictions_{m}_k{kk}.csv", index=False)
+            (out_dir / f"checks_{m}_k{kk}.json").write_text(json.dumps(chk, indent=2) + "\n")
 
-        summaries[m] = chk
-        print(f"{m}: nodes={chk['n_nodes']} edges={chk['n_edges']} components={chk['n_components']}", flush=True)
+            if kk == int(K):
+                graph_nodes.to_csv(out_dir / f"nodes_{m}.csv", index=False)
+                edges.to_csv(out_dir / f"edges_{m}.csv", index=False)
+                (out_dir / f"checks_{m}.json").write_text(json.dumps(chk, indent=2) + "\n")
+                write_npz(out_dir, m, graph_nodes, edges)
+                summaries[m] = chk
+
+        base = summaries.get(m)
+        if base is not None:
+            print(f"{m}: nodes={base['n_nodes']} edges={base['n_edges']} components={base['n_components']}", flush=True)
+        else:
+            print(f"{m}: bench done", flush=True)
+
+    learned_rows, learned_summaries = run_learned_mix(
+        out_dir,
+        args.dataset_id,
+        nodes,
+        blocks,
+        node_cols,
+        bench_k_values,
+    )
+
+    bench_rows.extend(learned_rows)
+    summaries.update(learned_summaries)
+
+    bench_df = pd.DataFrame(bench_rows).sort_values(["leaky", "measurement", "k"])
+    bench_df = add_spatial_reference(bench_df)
+
+    bench_df.to_csv(out_dir / "bench_xy.csv", index=False)
+    bench_df.to_csv(out_dir / "bench_xy_by_k.csv", index=False)
+
+    bench_summary, bench_best = summarize_benchmarks(bench_df)
+    bench_summary.to_csv(out_dir / "bench_xy_summary.csv", index=False)
+    bench_best.to_csv(out_dir / "bench_xy_best.csv", index=False)
+
+    best_k = best_k_by_measurement(bench_df)
+    best_k.to_csv(out_dir / "best_k_by_measurement.csv", index=False)
+
+    best_nonleaky = (
+        bench_df[~bench_df["leaky"]]
+        .dropna(subset=["median_vs_spatial_best"])
+        .sort_values(["median_vs_spatial_best", "median_xy_error"])
+        .head(10)
+    )
+
+    print()
+    print("bench top non-leaky:", flush=True)
+    print(
+        best_nonleaky[
+            [
+                "measurement",
+                "k",
+                "n_edges",
+                "coverage",
+                "median_xy_error",
+                "median_vs_spatial_best",
+                "median_vs_spatial_same_k",
+            ]
+        ].to_string(index=False),
+        flush=True,
+    )
+
+    print(f"bench saved: {out_dir / 'bench_xy.csv'}", flush=True)
+    print(f"predictions saved: {out_dir}", flush=True)
+
 
     (out_dir / "summary.json").write_text(json.dumps({
         **adata.uns["xenium_clean"],
         "n_cells_loaded": int(adata.n_obs),
         "n_cells_dumped": int(adata.n_obs),
         "n_genes": int(adata.n_vars),
-        "k": int(args.k),
+        "k": int(K),
+        "bench_k_values": bench_k_values,
+        "learned_mix_name": LEARNED_MIX_NAME,
+        "learned_base_measurements": list(LEARNED_BASE_MEASUREMENTS),
+        "learned_weight_values": list(LEARNED_WEIGHT_VALUES),
+        "learned_min_coverage": float(LEARNED_MIN_COVERAGE),
         "expression_pcs": int(EXPRESSION_PCS),
         "use_neighbor_cutoff": bool(USE_NEIGHBOR_CUTOFF),
         "cutoff_quantile": float(CUTOFF_QUANTILE),
         "cutoff_mad": float(CUTOFF_MAD),
         "min_edges_per_node": int(MIN_EDGES_PER_NODE),
-        "measurements": list(MEASUREMENTS),
-        "measurement_defs": MEASUREMENTS,
+        "measurements": measurement_names,
+        "visible_measurements": list(VISIBLE_MEASUREMENTS),
+        "hidden_measurements": list(HIDDEN_MEASUREMENTS),
+        "active_measurements": list(ACTIVE_MEASUREMENTS),
+        "measurement_defs": {m: MEASUREMENTS[m] for m in measurement_names},
         "node_columns": node_cols,
         "edge_columns": EDGE_COLS,
         "edge_summaries": summaries,

@@ -8,15 +8,20 @@ for p in sorted(Path("outputs").glob("*/bench_xy.csv")):
     df = pd.read_csv(p)
     rows.append(df)
 
+if not rows:
+    raise SystemExit("no bench_xy.csv files found")
+
 df = pd.concat(rows, ignore_index=True)
 
-clean = df[~df["leaky"]].copy()
+if "k" not in df.columns:
+    df["k"] = 4
 
+clean = df[~df["leaky"]].copy()
 clean["rank"] = clean.groupby("dataset")["median_vs_center"].rank(method="min")
 
 summary = (
     clean
-    .groupby("measurement")
+    .groupby(["measurement", "k"])
     .agg(
         datasets=("dataset", "nunique"),
         wins=("rank", lambda x: int((x == 1).sum())),
@@ -24,6 +29,7 @@ summary = (
         median_vs_center_mean=("median_vs_center", "mean"),
         median_vs_center_median=("median_vs_center", "median"),
         median_xy_error_median=("median_xy_error", "median"),
+        coverage_mean=("coverage", "mean"),
     )
     .reset_index()
     .sort_values(["wins", "rank_mean", "median_vs_center_median"], ascending=[False, True, True])
@@ -33,16 +39,15 @@ print(summary.to_string(index=False))
 
 best = (
     clean
-    .sort_values(["dataset", "median_vs_center"])
+    .sort_values(["dataset", "median_vs_center", "median_xy_error"])
     .groupby("dataset")
     .head(1)
-    [["dataset", "measurement", "median_vs_center", "median_xy_error"]]
+    [["dataset", "measurement", "k", "median_vs_center", "median_xy_error", "coverage"]]
 )
 
 print()
 print(best.to_string(index=False))
 
 best.to_csv("outputs/bench_xy_best.csv", index=False)
-
 summary.to_csv("outputs/bench_xy_summary.csv", index=False)
 df.to_csv("outputs/bench_xy_all.csv", index=False)

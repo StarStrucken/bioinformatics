@@ -33,6 +33,7 @@ outputs/*
 !outputs/tiny_human_ovary_nucexp_v4/
 outputs/tiny_human_ovary_nucexp_v4/*
 !outputs/tiny_human_ovary_nucexp_v4/*.json
+outputs/tiny_human_ovary_nucexp_v4/*[0-9].json
 !outputs/tiny_human_ovary_nucexp_v4/*.png
 
 # HPC
