@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -13,7 +14,14 @@ from sklearn.decomposition import TruncatedSVD, PCA
 from sklearn.neighbors import NearestNeighbors
 
 from xenum_common import zscore, parse_seq_ids, sequence_distance
-from xenum_measurements import ACTIVE_MEASUREMENTS, HIDDEN_MEASUREMENTS, LEAKY_MEASUREMENTS, MEASUREMENTS, VISIBLE_MEASUREMENTS
+from xenum_measurements import (
+    ACTIVE_MEASUREMENTS,
+    HIDDEN_MEASUREMENTS,
+    LEAKY_MEASUREMENTS,
+    MEASUREMENTS,
+    OPTIONAL_MEASUREMENTS,
+    VISIBLE_MEASUREMENTS,
+)
 from xenum_paths import data_dir, out_dir as make_out_dir
 
 try:
@@ -26,11 +34,19 @@ K = 4
 BENCH_K_VALUES = (1, 2, 3, 4, 5, 8, 12, 16, 24, 32)
 EXPRESSION_PCS = 30
 LEARNED_MIX_NAME = "learned_mix"
-LEARNED_BASE_MEASUREMENTS = ("expression", "morphology", "seq_jaccard", "seq_jaccard_all")
+RUN_LEARNED_MIX = False
+LEARNED_BASE_MEASUREMENTS = (
+    "expression",
+    "morphology",
+    "morphology_image",
+    "seq_jaccard",
+    "seq_jaccard_all",
+    "seq_blast",
+)
 LEARNED_WEIGHT_VALUES = (0.0, 0.25, 0.5, 1.0, 2.0)
 LEARNED_MIN_COVERAGE = 0.95
 LEARNED_SCORE_MODE = "median_p90"
-LEARNED_P90_WEIGHT = 0.25
+LEARNED_P90_WEIGHT = 0.5
 
 BEST_K_MIN_PRED_SPREAD_RATIO = 0.35
 LEARNED_MIN_PRED_SPREAD_RATIO = 0.35
@@ -40,6 +56,33 @@ CUTOFF_QUANTILE = 0.995
 CUTOFF_MAD = 8.0
 MIN_EDGES_PER_NODE = 0
 TOP_GENES_PER_CELL = 32
+MORPHOLOGY_IMAGE_FEATURE_FILES = {
+    "morphology_image": (
+        "cache/morphology_image_features.parquet",
+        "cache/morphology_image_features.csv",
+        "morphology_image_features.parquet",
+        "morphology_image_features.csv",
+    ),
+    "morphology_image_summary": (
+        "cache/morphology_image_summary_features.parquet",
+        "cache/morphology_image_summary_features.csv",
+    ),
+    "morphology_image_histogram": (
+        "cache/morphology_image_histogram_features.parquet",
+        "cache/morphology_image_histogram_features.csv",
+    ),
+    "morphology_image_texture": (
+        "cache/morphology_image_texture_features.parquet",
+        "cache/morphology_image_texture_features.csv",
+    ),
+    "morphology_image_all": (
+        "cache/morphology_image_all_features.parquet",
+        "cache/morphology_image_all_features.csv",
+    ),
+}
+REPORT_DIR = "reports"
+CACHE_DIR = "cache"
+DIAGNOSTICS_DIR = "diagnostics"
 
 CELL_TABLE_NAMES = ("cells.csv.gz", "cells.csv", "cells.parquet")
 
@@ -85,6 +128,77 @@ def find_file(root: Path, names: tuple[str, ...]) -> Path:
             for p in base.rglob(name):
                 return p
     raise FileNotFoundError(names)
+
+def make_output_sections(out_dir):
+    report_dir = out_dir / REPORT_DIR
+    report_tables_dir = report_dir / "tables"
+    report_figures_dir = report_dir / "figures"
+    cache_dir = out_dir / CACHE_DIR
+    diagnostics_dir = out_dir / DIAGNOSTICS_DIR
+    diagnostics_checks_dir = diagnostics_dir / "checks"
+
+    for p in [
+        report_dir,
+        report_tables_dir,
+        report_figures_dir,
+        cache_dir,
+        diagnostics_dir,
+        diagnostics_checks_dir,
+    ]:
+        p.mkdir(parents=True, exist_ok=True)
+
+    return {
+        "reports": report_dir,
+        "report_tables": report_tables_dir,
+        "report_figures": report_figures_dir,
+        "cache": cache_dir,
+        "diagnostics": diagnostics_dir,
+        "diagnostics_checks": diagnostics_checks_dir,
+    }
+
+def copy_if_exists(src, dst):
+    if src.exists():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+def pair_cache_path(out_dir, measurement):
+    return out_dir / CACHE_DIR / f"pairs_{measurement}.parquet"
+
+def pair_legacy_path(out_dir, measurement):
+    return out_dir / f"pairs_{measurement}.parquet"
+
+def write_pair_cache(out_dir, measurement, pairs):
+    path = pair_cache_path(out_dir, measurement)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pairs.to_parquet(path, index=False)
+    return path
+
+def mirror_outputs(out_dir):
+    dirs = make_output_sections(out_dir)
+
+    for name in [
+        "summary.json",
+        "learned_mix_weights.json",
+    ]:
+        copy_if_exists(out_dir / name, dirs["reports"] / name)
+
+    for name in [
+        "best_k_by_measurement.csv",
+        "bench_xy_summary.csv",
+        "bench_xy_best.csv",
+        "learned_mix_top.csv",
+    ]:
+        copy_if_exists(out_dir / name, dirs["report_tables"] / name)
+
+    for name in [
+        "bench_xy.csv",
+        "bench_xy_by_k.csv",
+        "learned_mix_grid.csv",
+    ]:
+        copy_if_exists(out_dir / name, dirs["diagnostics"] / name)
+
+    for path in out_dir.glob("checks_*.json"):
+        copy_if_exists(path, dirs["diagnostics_checks"] / path.name)
 
 def read_cells(xenium_dir: Path):
     path = find_file(xenium_dir, CELL_TABLE_NAMES)
@@ -176,6 +290,100 @@ def jaccard_distance(a, b):
 
     return 1.0 - len(a & b) / u
 
+def load_morphology_feature_table(out_dir, nodes, measurement, rel_paths):
+    path = None
+
+    for rel in rel_paths:
+        p = out_dir / rel
+        if p.exists():
+            path = p
+            break
+
+    if path is None:
+        return None
+
+    if path.suffix == ".parquet":
+        df = pd.read_parquet(path)
+    else:
+        df = pd.read_csv(path)
+
+    if "cell_id" in df.columns:
+        df["cell_id"] = df["cell_id"].astype(str)
+        base = nodes[["cell_id"]].copy()
+        aligned = base.merge(df, on="cell_id", how="left")
+    elif len(df) == len(nodes):
+        aligned = df.reset_index(drop=True).copy()
+    else:
+        print(f"{measurement} skipped: cannot align {path}", flush=True)
+        return None
+
+    skip = {
+        "cell_id",
+        "x",
+        "y",
+        "x_centroid",
+        "y_centroid",
+        "label",
+        "labels",
+        "node",
+        "index",
+    }
+
+    feature_cols = [
+        c for c in aligned.columns
+        if c not in skip and pd.api.types.is_numeric_dtype(aligned[c])
+    ]
+
+    if not feature_cols:
+        print(f"{measurement} skipped: no numeric features in {path}", flush=True)
+        return None
+
+    mat = aligned[feature_cols].to_numpy(dtype=np.float32)
+    mat = np.nan_to_num(mat, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+
+    return zscore(mat), feature_cols, str(path)
+
+def load_morphology_image_block(out_dir, nodes):
+    return load_morphology_feature_table(
+        out_dir,
+        nodes,
+        "morphology_image",
+        MORPHOLOGY_IMAGE_FEATURE_FILES["morphology_image"],
+    )
+
+def load_morphology_image_blocks(out_dir, nodes):
+    out = {}
+
+    for measurement, rel_paths in MORPHOLOGY_IMAGE_FEATURE_FILES.items():
+        item = load_morphology_feature_table(out_dir, nodes, measurement, rel_paths)
+
+        if item is not None:
+            out[measurement] = item
+
+    return out
+
+def measurement_available(measurement, blocks):
+    if measurement not in MEASUREMENTS:
+        return False
+
+    if measurement.startswith("seq_"):
+        return True
+
+    for name in MEASUREMENTS[measurement]["blocks"]:
+        if name not in blocks:
+            return False
+
+    return True
+
+def available_measurements(blocks):
+    out = []
+
+    for m in VISIBLE_MEASUREMENTS + OPTIONAL_MEASUREMENTS + HIDDEN_MEASUREMENTS:
+        if measurement_available(m, blocks):
+            out.append(m)
+
+    return out
+
 def log_norm_matrix(x, target_sum=10000.0):
     total = np.asarray(x.sum(axis=1)).ravel().astype(np.float32)
     scale = target_sum / np.maximum(total, 1.0)
@@ -247,17 +455,23 @@ def make_pairs_sequence_all_pairs(nodes, measurement):
     return pd.DataFrame(rows, columns=["source", "target", "distance"])
 
 def load_or_make_pairs(out_dir, nodes, blocks, measurement):
-    path = out_dir / f"pairs_{measurement}.parquet"
+    cache_path = pair_cache_path(out_dir, measurement)
+    legacy_path = pair_legacy_path(out_dir, measurement)
 
-    if path.exists():
-        return pd.read_parquet(path)
+    if cache_path.exists():
+        return pd.read_parquet(cache_path)
+
+    if legacy_path.exists():
+        pairs = pd.read_parquet(legacy_path)
+        write_pair_cache(out_dir, measurement, pairs)
+        return pairs
 
     if measurement.startswith("seq_"):
         pairs = make_pairs_sequence_all_pairs(nodes, measurement)
     else:
         pairs = make_pairs_all_pairs(nodes, blocks, measurement)
 
-    pairs.to_parquet(path, index=False)
+    write_pair_cache(out_dir, measurement, pairs)
     return pairs
 
 def neighbor_lists_from_pairs(n, pairs):
@@ -706,10 +920,10 @@ def combine_pair_tables(pair_tables, weights):
 
     return out
 
-def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_values):
+def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_values, base_measurements):
     pair_tables = {}
 
-    for m in LEARNED_BASE_MEASUREMENTS:
+    for m in base_measurements:
         pair_tables[m] = load_or_make_pairs(out_dir, nodes[node_cols], blocks, m)
 
     rows = []
@@ -721,7 +935,7 @@ def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_value
     }
 
     for weights in tqdm(
-        list(learned_weight_grid(LEARNED_BASE_MEASUREMENTS, LEARNED_WEIGHT_VALUES)),
+        list(learned_weight_grid(base_measurements, LEARNED_WEIGHT_VALUES)),
         desc="learned mix",
     ):
         label = learned_label(weights)
@@ -810,7 +1024,7 @@ def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_value
     }
 
     pairs = combine_pair_tables(pair_tables, best_weights)
-    pairs.to_parquet(out_dir / "pairs_learned_mix.parquet", index=False)
+    write_pair_cache(out_dir, LEARNED_MIX_NAME, pairs)
 
     best = neighbor_lists_from_pairs(len(nodes), pairs)
 
@@ -858,7 +1072,7 @@ def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_value
         "measurement": LEARNED_MIX_NAME,
         "label": best_label,
         "weights": best_weights,
-        "base_measurements": list(LEARNED_BASE_MEASUREMENTS),
+        "base_measurements": list(base_measurements),
         "weight_values": list(LEARNED_WEIGHT_VALUES),
         "min_coverage": float(LEARNED_MIN_COVERAGE),
         "p90_weight": float(LEARNED_P90_WEIGHT),
@@ -906,6 +1120,7 @@ def main():
 
     xenium_dir = data_dir(args.dataset_id)
     out_dir = make_out_dir(args.dataset_id)
+    make_output_sections(out_dir)
 
     adata = load_xenium(xenium_dir)
 
@@ -913,6 +1128,24 @@ def main():
     nodes["top_gene_ids"] = top_gene_ids(adata.X, TOP_GENES_PER_CELL)
     nodes["detected_gene_ids"] = detected_gene_ids(adata.X)
     blocks = build_blocks(adata, nodes, EXPRESSION_PCS)
+
+    morph_img_blocks = load_morphology_image_blocks(out_dir, nodes)
+    morph_img_meta = {}
+
+    for name, item in morph_img_blocks.items():
+        block, cols, path = item
+        blocks[name] = block
+        morph_img_meta[name] = {
+            "path": path,
+            "feature_count": len(cols),
+        }
+        print(f"{name} loaded: {path} features={len(cols)}", flush=True)
+
+    if not morph_img_blocks:
+        print("morphology_image missing: skipped", flush=True)
+
+    morph_img_path = morph_img_meta.get("morphology_image", {}).get("path")
+    morph_img_cols = [None] * int(morph_img_meta.get("morphology_image", {}).get("feature_count", 0))
 
     expr_cols = []
     for i in range(blocks["expression"].shape[1]):
@@ -926,7 +1159,7 @@ def main():
     summaries = {}
     bench_rows = []
     bench_k_values = sorted(set([int(K), *BENCH_K_VALUES]))
-    measurement_names = list(ACTIVE_MEASUREMENTS)
+    measurement_names = available_measurements(blocks)
 
     for m in tqdm(measurement_names, desc="graphs"):
         pairs = load_or_make_pairs(out_dir, nodes[node_cols], blocks, m)
@@ -963,14 +1196,25 @@ def main():
         else:
             print(f"{m}: bench done", flush=True)
 
-    learned_rows, learned_summaries = run_learned_mix(
-        out_dir,
-        args.dataset_id,
-        nodes,
-        blocks,
-        node_cols,
-        bench_k_values,
-    )
+    learned_base_measurements = [
+        m for m in LEARNED_BASE_MEASUREMENTS
+        if measurement_available(m, blocks)
+    ]
+
+    if RUN_LEARNED_MIX:
+        learned_rows, learned_summaries = run_learned_mix(
+            out_dir,
+            args.dataset_id,
+            nodes,
+            blocks,
+            node_cols,
+            bench_k_values,
+            learned_base_measurements,
+        )
+    else:
+        learned_rows = []
+        learned_summaries = {}
+        print("learned mix skipped", flush=True)
 
     bench_rows.extend(learned_rows)
     summaries.update(learned_summaries)
@@ -1024,7 +1268,10 @@ def main():
         "k": int(K),
         "bench_k_values": bench_k_values,
         "learned_mix_name": LEARNED_MIX_NAME,
-        "learned_base_measurements": list(LEARNED_BASE_MEASUREMENTS),
+        "learned_base_measurements": list(learned_base_measurements),
+        "morphology_image_features_path": morph_img_path,
+        "morphology_image_feature_count": len(morph_img_cols),
+        "morphology_image_blocks": morph_img_meta,
         "learned_weight_values": list(LEARNED_WEIGHT_VALUES),
         "learned_min_coverage": float(LEARNED_MIN_COVERAGE),
         "expression_pcs": int(EXPRESSION_PCS),
@@ -1035,14 +1282,17 @@ def main():
         "measurements": measurement_names,
         "visible_measurements": list(VISIBLE_MEASUREMENTS),
         "hidden_measurements": list(HIDDEN_MEASUREMENTS),
-        "active_measurements": list(ACTIVE_MEASUREMENTS),
+        "active_measurements": measurement_names,
         "measurement_defs": {m: MEASUREMENTS[m] for m in measurement_names},
         "node_columns": node_cols,
         "edge_columns": EDGE_COLS,
         "edge_summaries": summaries,
     }, indent=2) + "\n")
+    mirror_outputs(out_dir)
 
-    print(f"saved: {out_dir}")
+    print(f"saved: {out_dir}", flush=True)
+    print(f"reports: {out_dir / REPORT_DIR}", flush=True)
+    print(f"diagnostics: {out_dir / DIAGNOSTICS_DIR}", flush=True)
 
 if __name__ == "__main__":
     main()

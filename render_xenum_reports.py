@@ -1,0 +1,305 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
+
+from xenum_paths import existing_out_dir
+
+FIG_DPI = 180
+MAX_LINE_SEGMENTS = 30_000
+MAX_SCATTER_POINTS = 100_000
+PREDICTION_FIGSIZE = (8, 8)
+BENCHMARK_FIGSIZE = (10, 5)
+
+PREDICTION_ALPHA = 0.85
+REAL_ALPHA = 0.25
+LINE_ALPHA = 0.18
+
+USE_GLOBAL_ERROR_SCALE = True
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("dataset_id")
+    return p.parse_args()
+
+def report_dirs(out_dir: Path):
+    report_dir = out_dir / "reports"
+    table_dir = report_dir / "tables"
+    figure_dir = report_dir / "figures"
+    figure_dir.mkdir(parents=True, exist_ok=True)
+    return report_dir, table_dir, figure_dir
+
+def read_best_k(out_dir: Path, table_dir: Path):
+    path = table_dir / "best_k_by_measurement.csv"
+
+    if not path.exists():
+        path = out_dir / "best_k_by_measurement.csv"
+
+    if not path.exists():
+        raise FileNotFoundError("best_k_by_measurement.csv not found")
+
+    return pd.read_csv(path)
+
+def sample_indices(n, max_n, seed=0):
+    if n <= max_n:
+        return np.arange(n, dtype=int)
+
+    rng = np.random.default_rng(seed)
+    return np.sort(rng.choice(n, size=max_n, replace=False))
+
+def finite_prediction_mask(df):
+    cols = ["x", "y", "pred_x", "pred_y", "error"]
+    ok = np.ones(len(df), dtype=bool)
+
+    for c in cols:
+        ok &= np.isfinite(df[c].to_numpy(dtype=float))
+
+    return ok
+
+def prediction_title(measurement, k, df):
+    ok = finite_prediction_mask(df)
+    err = df.loc[ok, "error"].to_numpy(dtype=float)
+
+    if len(err) == 0:
+        return f"{measurement} k={k}"
+
+    median = float(np.median(err))
+    p90 = float(np.quantile(err, 0.90))
+    coverage = float(ok.mean())
+
+    return f"{measurement} k={k}  median={median:.2f}  p90={p90:.2f}  coverage={coverage:.3f}"
+
+def render_prediction(out_dir: Path, figure_dir: Path, measurement: str, k: int, error_limits=None):
+    path = out_dir / f"predictions_{measurement}_k{k}.csv"
+
+    if not path.exists():
+        print(f"skip {measurement}: missing {path}", flush=True)
+        return None
+
+    df = pd.read_csv(path)
+    ok = finite_prediction_mask(df)
+    idx_all = np.flatnonzero(ok)
+
+    if len(idx_all) == 0:
+        print(f"skip {measurement}: no finite predictions", flush=True)
+        return None
+
+    idx_scatter = idx_all[sample_indices(len(idx_all), MAX_SCATTER_POINTS)]
+    idx_lines = idx_all[sample_indices(len(idx_all), MAX_LINE_SEGMENTS)]
+
+    x = df["x"].to_numpy(dtype=float)
+    y = -df["y"].to_numpy(dtype=float)
+    px = df["pred_x"].to_numpy(dtype=float)
+    py = -df["pred_y"].to_numpy(dtype=float)
+    err = df["error"].to_numpy(dtype=float)
+
+    segments = np.stack(
+        [
+            np.column_stack([x[idx_lines], y[idx_lines]]),
+            np.column_stack([px[idx_lines], py[idx_lines]]),
+        ],
+        axis=1,
+    )
+
+    fig, ax = plt.subplots(figsize=PREDICTION_FIGSIZE)
+
+    lc = LineCollection(
+        segments,
+        linewidths=0.35,
+        alpha=LINE_ALPHA,
+    )
+    ax.add_collection(lc)
+
+    ax.scatter(
+        x[idx_scatter],
+        y[idx_scatter],
+        s=2,
+        alpha=REAL_ALPHA,
+        label="real",
+    )
+
+    finite_err = err[idx_scatter]
+    if error_limits is None:
+        lo = float(np.quantile(finite_err, 0.05))
+        hi = float(np.quantile(finite_err, 0.95))
+    else:
+        lo, hi = error_limits
+
+    if hi <= lo:
+        hi = lo + 1.0
+
+    sc = ax.scatter(
+        px[idx_scatter],
+        py[idx_scatter],
+        c=np.clip(err[idx_scatter], lo, hi),
+        s=5,
+        alpha=PREDICTION_ALPHA,
+        label="predicted",
+    )
+
+    ax.set_title(prediction_title(measurement, k, df))
+    ax.set_xlabel("x")
+    ax.set_ylabel("y * -1")
+    ax.set_aspect("equal", adjustable="box")
+    ax.legend(loc="best", markerscale=3)
+    fig.colorbar(sc, ax=ax, label="prediction error")
+
+    out_path = figure_dir / f"prediction_{measurement}.png"
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=FIG_DPI)
+    plt.close(fig)
+
+    print(f"rendered: {out_path}", flush=True)
+    return out_path
+
+def render_benchmark_best(table_dir: Path, figure_dir: Path, best_df: pd.DataFrame):
+    if best_df.empty:
+        return None
+
+    df = best_df.copy()
+    df = df.dropna(subset=["median_xy_error"])
+
+    if df.empty:
+        return None
+
+    df = df.sort_values(["median_xy_error", "measurement"])
+
+    labels = [
+        f"{r.measurement}\nk={int(r.k)}"
+        for r in df.itertuples(index=False)
+    ]
+    vals = df["median_xy_error"].to_numpy(dtype=float)
+
+    fig, ax = plt.subplots(figsize=BENCHMARK_FIGSIZE)
+    ax.bar(np.arange(len(df)), vals)
+    ax.set_xticks(np.arange(len(df)))
+    ax.set_xticklabels(labels, rotation=35, ha="right")
+    ax.set_ylabel("xy error")
+    ax.set_title("Best k by measurement: median with p90 whisker")
+
+    if "p90_xy_error" in df.columns:
+        p90 = df["p90_xy_error"].to_numpy(dtype=float)
+        upper = np.maximum(0.0, p90 - vals)
+        lower = np.zeros_like(upper)
+
+        ax.errorbar(
+            np.arange(len(df)),
+            vals,
+            yerr=np.vstack([lower, upper]),
+            fmt="none",
+            linewidth=0.8,
+            capsize=2,
+        )
+
+    out_path = figure_dir / "benchmark_best_k.png"
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=FIG_DPI)
+    plt.close(fig)
+
+    print(f"rendered: {out_path}", flush=True)
+    return out_path
+
+def write_report_overview(table_dir: Path, best_df: pd.DataFrame):
+    cols = [
+        "measurement",
+        "k",
+        "median_xy_error",
+        "p90_xy_error",
+        "coverage",
+        "pred_spread_ratio",
+        "median_vs_spatial_best",
+        "median_vs_spatial_same_k",
+        "spatial_best_k",
+        "spatial_best_median_xy_error",
+    ]
+
+    cols = [c for c in cols if c in best_df.columns]
+
+    if not cols:
+        return None
+
+    df = best_df[cols].copy()
+
+    if "median_xy_error" in df.columns:
+        df = df.sort_values(["median_xy_error", "measurement"])
+
+    out_path = table_dir / "report_overview.csv"
+    round_cols = [
+        "median_xy_error",
+        "p90_xy_error",
+        "coverage",
+        "pred_spread_ratio",
+        "median_vs_spatial_best",
+        "median_vs_spatial_same_k",
+        "spatial_best_median_xy_error",
+    ]
+
+    for c in round_cols:
+        if c in df.columns:
+            df[c] = df[c].round(4)
+    df.to_csv(out_path, index=False)
+
+    print(f"written: {out_path}", flush=True)
+    return out_path
+
+def global_error_limits(out_dir: Path, best_df: pd.DataFrame):
+    vals = []
+
+    for r in best_df.itertuples(index=False):
+        path = out_dir / f"predictions_{r.measurement}_k{int(r.k)}.csv"
+
+        if not path.exists():
+            continue
+
+        df = pd.read_csv(path)
+        ok = finite_prediction_mask(df)
+        err = df.loc[ok, "error"].to_numpy(dtype=float)
+
+        if len(err):
+            vals.append(err)
+
+    if not vals:
+        return None
+
+    err = np.concatenate(vals)
+    return float(np.quantile(err, 0.05)), float(np.quantile(err, 0.95))
+
+def main():
+    args = parse_args()
+
+    out_dir = existing_out_dir(args.dataset_id)
+    _, table_dir, figure_dir = report_dirs(out_dir)
+
+    best_df = read_best_k(out_dir, table_dir)
+    write_report_overview(table_dir, best_df)
+
+    rendered = []
+
+    error_limits = global_error_limits(out_dir, best_df) if USE_GLOBAL_ERROR_SCALE else None
+
+    for r in best_df.itertuples(index=False):
+        measurement = str(r.measurement)
+        k = int(r.k)
+
+        path = render_prediction(out_dir, figure_dir, measurement, k, error_limits=error_limits)
+        if path is not None:
+            rendered.append(path)
+
+    bench_path = render_benchmark_best(table_dir, figure_dir, best_df)
+    if bench_path is not None:
+        rendered.append(bench_path)
+
+    print(f"figures rendered: {len(rendered)}", flush=True)
+    print(f"figures dir: {figure_dir}", flush=True)
+
+if __name__ == "__main__":
+    main()

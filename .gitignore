@@ -30,11 +30,12 @@ logs/
 # Generated outputs
 outputs/*
 !outputs/bench_*.csv
-!outputs/tiny_human_ovary_nucexp_v4/
-outputs/tiny_human_ovary_nucexp_v4/*
-!outputs/tiny_human_ovary_nucexp_v4/*.json
-outputs/tiny_human_ovary_nucexp_v4/*[0-9].json
-!outputs/tiny_human_ovary_nucexp_v4/*.png
+!outputs/*/
+outputs/*/*
+!outputs/*/reports/
+!outputs/*/reports/**
+outputs/*/cache/
+outputs/*/diagnostics/
 
 # HPC
 slurm-*.out

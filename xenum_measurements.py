@@ -11,6 +11,32 @@ MEASUREMENTS = {
         "blocks": {"morphology": 1.0},
     },
 
+    # cache/morphology_image_features.parquet; squidpy/cpmeasure image features
+    "morphology_image": {
+        "label": "morphology_image",
+        "blocks": {"morphology_image": 1.0},
+    },
+
+    "morphology_image_summary": {
+        "label": "morphology_image_summary",
+        "blocks": {"morphology_image_summary": 1.0},
+    },
+
+    "morphology_image_histogram": {
+        "label": "morphology_image_histogram",
+        "blocks": {"morphology_image_histogram": 1.0},
+    },
+
+    "morphology_image_texture": {
+        "label": "morphology_image_texture",
+        "blocks": {"morphology_image_texture": 1.0},
+    },
+
+    "morphology_image_all": {
+        "label": "morphology_image_all",
+        "blocks": {"morphology_image_all": 1.0},
+    },
+
     # adata.X row nonzero values -> top 32 gene ids; Jaccard distance
     "seq_jaccard": {
         "label": "seq_jaccard_top32",
@@ -62,8 +88,11 @@ MEASUREMENTS = {
     # adata.X row top ids; old sequence experiment
     # "seq_local": {"label": "seq_local", "blocks": {}},
 
-    # adata.X row top ids; old sequence experiment
-    # "seq_blast": {"label": "seq_blast", "blocks": {}},
+    # adata.X row nonzero values -> top 32 gene ids; alignment-like sequence distance
+    "seq_blast": {
+        "label": "seq_blast_top32",
+        "blocks": {},
+    },
 }
 
 VISIBLE_MEASUREMENTS = [
@@ -71,6 +100,15 @@ VISIBLE_MEASUREMENTS = [
     "morphology",
     "seq_jaccard",
     "seq_jaccard_all",
+    "seq_blast",
+]
+
+OPTIONAL_MEASUREMENTS = [
+    "morphology_image",
+    "morphology_image_summary",
+    "morphology_image_histogram",
+    "morphology_image_texture",
+    "morphology_image_all",
 ]
 
 HIDDEN_MEASUREMENTS = [
@@ -86,7 +124,6 @@ DEPRECATED_MEASUREMENTS = {
     "expr_morph_spatial",
     "mix",
     "seq_local",
-    "seq_blast",
 }
 
 LEAKY_MEASUREMENTS = {
@@ -95,4 +132,4 @@ LEAKY_MEASUREMENTS = {
     "expr_morph_spatial",
 }
 
-MEASUREMENT_ORDER = ACTIVE_MEASUREMENTS
+MEASUREMENT_ORDER = VISIBLE_MEASUREMENTS + OPTIONAL_MEASUREMENTS + HIDDEN_MEASUREMENTS
