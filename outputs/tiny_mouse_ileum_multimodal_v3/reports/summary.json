@@ -1,0 +1,392 @@
+{
+  "xenium_dir": "/home/yarro/Projects/some/bioinformatics/data/tiny_mouse_ileum_multimodal_v3",
+  "matrix_path": "/home/yarro/Projects/some/bioinformatics/data/tiny_mouse_ileum_multimodal_v3/cell_feature_matrix.h5",
+  "cells_path": "/home/yarro/Projects/some/bioinformatics/data/tiny_mouse_ileum_multimodal_v3/cells.csv.gz",
+  "n_cells_loaded": 36,
+  "n_cells_dumped": 36,
+  "n_genes": 5006,
+  "k": 4,
+  "bench_k_values": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    8,
+    12,
+    16,
+    24,
+    32
+  ],
+  "learned_mix_name": "learned_mix",
+  "learned_base_measurements": [
+    "expression",
+    "morphology",
+    "morphology_image",
+    "seq_jaccard",
+    "seq_jaccard_all",
+    "seq_blast"
+  ],
+  "morphology_image_features_path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_features.parquet",
+  "morphology_image_feature_count": 140,
+  "morphology_image_blocks": {
+    "morphology_image": {
+      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_features.parquet",
+      "feature_count": 140
+    },
+    "morphology_image_summary": {
+      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_summary_features.parquet",
+      "feature_count": 20
+    },
+    "morphology_image_histogram": {
+      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_histogram_features.parquet",
+      "feature_count": 40
+    },
+    "morphology_image_texture": {
+      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_texture_features.parquet",
+      "feature_count": 80
+    },
+    "morphology_image_all": {
+      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_all_features.parquet",
+      "feature_count": 140
+    }
+  },
+  "learned_weight_values": [
+    0.0,
+    0.25,
+    0.5,
+    1.0,
+    2.0
+  ],
+  "learned_min_coverage": 0.95,
+  "expression_pcs": 30,
+  "use_neighbor_cutoff": true,
+  "cutoff_quantile": 0.995,
+  "cutoff_mad": 8.0,
+  "min_edges_per_node": 0,
+  "measurements": [
+    "expression",
+    "morphology",
+    "seq_jaccard",
+    "seq_jaccard_all",
+    "seq_blast",
+    "morphology_image",
+    "morphology_image_summary",
+    "morphology_image_histogram",
+    "morphology_image_texture",
+    "morphology_image_all",
+    "spatial"
+  ],
+  "visible_measurements": [
+    "expression",
+    "morphology",
+    "seq_jaccard",
+    "seq_jaccard_all",
+    "seq_blast"
+  ],
+  "hidden_measurements": [
+    "spatial"
+  ],
+  "active_measurements": [
+    "expression",
+    "morphology",
+    "seq_jaccard",
+    "seq_jaccard_all",
+    "seq_blast",
+    "morphology_image",
+    "morphology_image_summary",
+    "morphology_image_histogram",
+    "morphology_image_texture",
+    "morphology_image_all",
+    "spatial"
+  ],
+  "measurement_defs": {
+    "expression": {
+      "label": "expression",
+      "blocks": {
+        "expression": 1.0
+      }
+    },
+    "morphology": {
+      "label": "morphology",
+      "blocks": {
+        "morphology": 1.0
+      }
+    },
+    "seq_jaccard": {
+      "label": "seq_jaccard_top32",
+      "blocks": {}
+    },
+    "seq_jaccard_all": {
+      "label": "seq_jaccard_all",
+      "blocks": {}
+    },
+    "seq_blast": {
+      "label": "seq_blast_top32",
+      "blocks": {}
+    },
+    "morphology_image": {
+      "label": "morphology_image",
+      "blocks": {
+        "morphology_image": 1.0
+      }
+    },
+    "morphology_image_summary": {
+      "label": "morphology_image_summary",
+      "blocks": {
+        "morphology_image_summary": 1.0
+      }
+    },
+    "morphology_image_histogram": {
+      "label": "morphology_image_histogram",
+      "blocks": {
+        "morphology_image_histogram": 1.0
+      }
+    },
+    "morphology_image_texture": {
+      "label": "morphology_image_texture",
+      "blocks": {
+        "morphology_image_texture": 1.0
+      }
+    },
+    "morphology_image_all": {
+      "label": "morphology_image_all",
+      "blocks": {
+        "morphology_image_all": 1.0
+      }
+    },
+    "spatial": {
+      "label": "spatial",
+      "blocks": {
+        "spatial": 1.0
+      }
+    }
+  },
+  "node_columns": [
+    "cell_id",
+    "x_centroid",
+    "y_centroid",
+    "x_norm",
+    "y_norm",
+    "log_total_counts",
+    "log_detected_genes",
+    "cell_area",
+    "nucleus_area",
+    "nucleus_cell_ratio",
+    "top_gene_ids",
+    "detected_gene_ids",
+    "expression_pc1",
+    "expression_pc2",
+    "expression_pc3",
+    "expression_pc4",
+    "expression_pc5",
+    "expression_pc6",
+    "expression_pc7",
+    "expression_pc8",
+    "expression_pc9",
+    "expression_pc10",
+    "expression_pc11",
+    "expression_pc12",
+    "expression_pc13",
+    "expression_pc14",
+    "expression_pc15",
+    "expression_pc16",
+    "expression_pc17",
+    "expression_pc18",
+    "expression_pc19",
+    "expression_pc20",
+    "expression_pc21",
+    "expression_pc22",
+    "expression_pc23",
+    "expression_pc24",
+    "expression_pc25",
+    "expression_pc26",
+    "expression_pc27",
+    "expression_pc28",
+    "expression_pc29",
+    "expression_pc30"
+  ],
+  "edge_columns": [
+    "measurement",
+    "source",
+    "target",
+    "neighbor_distance",
+    "xy_distance",
+    "expression_distance",
+    "morphology_distance",
+    "source_cell_id",
+    "target_cell_id",
+    "source_component_id",
+    "target_component_id",
+    "source_component_size",
+    "target_component_size",
+    "same_component"
+  ],
+  "edge_summaries": {
+    "expression": {
+      "measurement": "expression",
+      "label": "expression",
+      "n_nodes": 36,
+      "n_edges": 102,
+      "n_components": 2,
+      "largest_component": 27,
+      "singletons": 0,
+      "neighbor_distance_median": 0.0,
+      "neighbor_distance_max": 6.085106372833252,
+      "neighbor_cutoff": 6.085106372833252,
+      "raw_directed_edges": 102,
+      "kept_directed_edges": 102,
+      "pruned_directed_edges": 0
+    },
+    "morphology": {
+      "measurement": "morphology",
+      "label": "morphology",
+      "n_nodes": 36,
+      "n_edges": 94,
+      "n_components": 1,
+      "largest_component": 36,
+      "singletons": 0,
+      "neighbor_distance_median": 0.5293218493461609,
+      "neighbor_distance_max": 2.9297964572906494,
+      "neighbor_cutoff": 2.961247682571411,
+      "raw_directed_edges": 95,
+      "kept_directed_edges": 94,
+      "pruned_directed_edges": 1
+    },
+    "seq_jaccard": {
+      "measurement": "seq_jaccard",
+      "label": "seq_jaccard_top32",
+      "n_nodes": 36,
+      "n_edges": 101,
+      "n_components": 2,
+      "largest_component": 27,
+      "singletons": 0,
+      "neighbor_distance_median": 0.0,
+      "neighbor_distance_max": 1.0,
+      "neighbor_cutoff": 1.0,
+      "raw_directed_edges": 101,
+      "kept_directed_edges": 101,
+      "pruned_directed_edges": 0
+    },
+    "seq_jaccard_all": {
+      "measurement": "seq_jaccard_all",
+      "label": "seq_jaccard_all",
+      "n_nodes": 36,
+      "n_edges": 101,
+      "n_components": 2,
+      "largest_component": 27,
+      "singletons": 0,
+      "neighbor_distance_median": 0.0,
+      "neighbor_distance_max": 1.0,
+      "neighbor_cutoff": 1.0,
+      "raw_directed_edges": 101,
+      "kept_directed_edges": 101,
+      "pruned_directed_edges": 0
+    },
+    "seq_blast": {
+      "measurement": "seq_blast",
+      "label": "seq_blast_top32",
+      "n_nodes": 36,
+      "n_edges": 53,
+      "n_components": 17,
+      "largest_component": 20,
+      "singletons": 16,
+      "neighbor_distance_median": 0.0,
+      "neighbor_distance_max": 0.35,
+      "neighbor_cutoff": 0.6499999761581421,
+      "raw_directed_edges": 111,
+      "kept_directed_edges": 53,
+      "pruned_directed_edges": 58
+    },
+    "morphology_image": {
+      "measurement": "morphology_image",
+      "label": "morphology_image",
+      "n_nodes": 36,
+      "n_edges": 100,
+      "n_components": 1,
+      "largest_component": 36,
+      "singletons": 0,
+      "neighbor_distance_median": 8.861902236938477,
+      "neighbor_distance_max": 16.049184799194336,
+      "neighbor_cutoff": 16.05373191833496,
+      "raw_directed_edges": 101,
+      "kept_directed_edges": 100,
+      "pruned_directed_edges": 1
+    },
+    "morphology_image_summary": {
+      "measurement": "morphology_image_summary",
+      "label": "morphology_image_summary",
+      "n_nodes": 36,
+      "n_edges": 89,
+      "n_components": 1,
+      "largest_component": 36,
+      "singletons": 0,
+      "neighbor_distance_median": 2.2290592193603516,
+      "neighbor_distance_max": 4.071196556091309,
+      "neighbor_cutoff": 4.110813140869141,
+      "raw_directed_edges": 90,
+      "kept_directed_edges": 89,
+      "pruned_directed_edges": 1
+    },
+    "morphology_image_histogram": {
+      "measurement": "morphology_image_histogram",
+      "label": "morphology_image_histogram",
+      "n_nodes": 36,
+      "n_edges": 99,
+      "n_components": 1,
+      "largest_component": 36,
+      "singletons": 0,
+      "neighbor_distance_median": 4.542862892150879,
+      "neighbor_distance_max": 8.671982765197754,
+      "neighbor_cutoff": 9.236111640930176,
+      "raw_directed_edges": 100,
+      "kept_directed_edges": 99,
+      "pruned_directed_edges": 1
+    },
+    "morphology_image_texture": {
+      "measurement": "morphology_image_texture",
+      "label": "morphology_image_texture",
+      "n_nodes": 36,
+      "n_edges": 98,
+      "n_components": 1,
+      "largest_component": 36,
+      "singletons": 0,
+      "neighbor_distance_median": 5.544819116592407,
+      "neighbor_distance_max": 13.835210800170898,
+      "neighbor_cutoff": 13.864603042602539,
+      "raw_directed_edges": 99,
+      "kept_directed_edges": 98,
+      "pruned_directed_edges": 1
+    },
+    "morphology_image_all": {
+      "measurement": "morphology_image_all",
+      "label": "morphology_image_all",
+      "n_nodes": 36,
+      "n_edges": 100,
+      "n_components": 1,
+      "largest_component": 36,
+      "singletons": 0,
+      "neighbor_distance_median": 8.861902236938477,
+      "neighbor_distance_max": 16.049184799194336,
+      "neighbor_cutoff": 16.05373191833496,
+      "raw_directed_edges": 101,
+      "kept_directed_edges": 100,
+      "pruned_directed_edges": 1
+    },
+    "spatial": {
+      "measurement": "spatial",
+      "label": "spatial",
+      "n_nodes": 36,
+      "n_edges": 84,
+      "n_components": 3,
+      "largest_component": 15,
+      "singletons": 0,
+      "neighbor_distance_median": 0.13897906243801117,
+      "neighbor_distance_max": 0.3536449074745178,
+      "neighbor_cutoff": 0.38419824838638306,
+      "raw_directed_edges": 85,
+      "kept_directed_edges": 84,
+      "pruned_directed_edges": 1
+    }
+  }
+}

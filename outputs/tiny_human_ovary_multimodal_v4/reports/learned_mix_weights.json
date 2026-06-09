@@ -1,0 +1,27 @@
+{
+  "measurement": "learned_mix",
+  "label": "learned_expression1_morphology0_seq_jaccard1_seq_jaccard_all0.5_seq_blast0.125",
+  "weights": {
+    "expression": 1.0,
+    "morphology": 0.0,
+    "seq_jaccard": 1.0,
+    "seq_jaccard_all": 0.5,
+    "seq_blast": 0.125
+  },
+  "base_measurements": [
+    "expression",
+    "morphology",
+    "seq_jaccard",
+    "seq_jaccard_all",
+    "seq_blast"
+  ],
+  "weight_values": [
+    0.0,
+    0.25,
+    0.5,
+    1.0,
+    2.0
+  ],
+  "min_coverage": 0.95,
+  "p90_weight": 0.5
+}

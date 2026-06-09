@@ -21,6 +21,8 @@ DATASET_IDS = (
     "ovarian_prime_5k_v3",
     "lymph_node_prime_5k_v3",
 )
+DATASET_OVERRIDES = {
+}
 
 FEATURE_SETS = {
     "morphology_image_summary": ["summary"],
@@ -46,7 +48,7 @@ def pixel_size_for(dataset_id):
 def image_morphology_config(dataset_id):
     pixel_size = pixel_size_for(dataset_id)
 
-    return {
+    cfg = {
         "xenium_dir": f"data/{dataset_id}",
         "image_glob": "morphology_focus/*.ome.tif",
         "cell_boundaries": "cell_boundaries.parquet",
@@ -63,6 +65,9 @@ def image_morphology_config(dataset_id):
         "spatial_offset": [0.0, 0.0],
         "feature_sets": {name: list(features) for name, features in FEATURE_SETS.items()},
     }
+
+    cfg.update(DATASET_OVERRIDES.get(dataset_id, {}))
+    return cfg
 
 DATASET_IMAGE_MORPHOLOGY = {
     dataset_id: image_morphology_config(dataset_id)

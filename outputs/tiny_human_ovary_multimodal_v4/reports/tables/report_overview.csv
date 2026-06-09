@@ -1,0 +1,7 @@
+measurement,k,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
+morphology_image,1,65.4399,563.7341,0.9791,25.9472,10.4149,4,2.522
+expression,1,148.7927,573.9977,0.9952,58.9969,23.6807,4,2.522
+seq_jaccard,1,178.9296,567.8598,0.9952,70.9463,28.477,4,2.522
+seq_jaccard_all,3,215.829,411.0752,0.9968,85.5771,70.1486,4,2.522
+seq_blast,5,257.5483,433.1508,0.9984,102.1189,100.0733,4,2.522
+morphology,8,296.1448,433.8442,1.0,117.4226,111.0832,4,2.522

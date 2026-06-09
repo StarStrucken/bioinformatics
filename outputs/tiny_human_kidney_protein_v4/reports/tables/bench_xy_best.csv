@@ -1,0 +1,2 @@
+dataset,measurement,k,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
+tiny_human_kidney_protein_v4,morphology_image,1,11.317898750305176,99.14569091796875,0.9748603351955307,4.1837339519797,1.8121982832206456,4,2.705214738845825

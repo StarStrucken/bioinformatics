@@ -1,0 +1,2 @@
+dataset,measurement,k,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
+tiny_human_ovary_nucexp_v4,expression,1,119.1271743774414,538.2098388671875,0.995253164556962,48.47809530610376,17.484944673795084,2,2.4573402404785156

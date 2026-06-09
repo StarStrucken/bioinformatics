@@ -433,32 +433,33 @@ def main():
     )
     coords = np.asarray(adata.obsm["spatial"], dtype=float)
 
-    arr_dbg = find_image_dataarray(
-        sdata.images[image_key],
-        preferred_scale=cfg.get("scale", "scale0"),
-    )
-    arr_dbg, _ = normalize_image_for_squidpy(arr_dbg)
-    vals = arr_dbg.to_numpy()
+    # arr_dbg = find_image_dataarray(
+    #     sdata.images[image_key],
+    #     preferred_scale=cfg.get("scale", "scale0"),
+    # )
+    # arr_dbg, _ = normalize_image_for_squidpy(arr_dbg)
+    # vals = arr_dbg.to_numpy()
+    #
+    # print("spatial x range:", float(np.nanmin(coords[:, 0])), float(np.nanmax(coords[:, 0])), flush=True)
+    # print("spatial y range:", float(np.nanmin(coords[:, 1])), float(np.nanmax(coords[:, 1])), flush=True)
+    # print("image y/x:", vals.shape[0], vals.shape[1], flush=True)
+    # print("raw image min/max:", float(np.nanmin(vals)), float(np.nanmax(vals)), flush=True)
+    #
+    # for idx in [0, len(coords) // 2, len(coords) - 1]:
+    #     cx = int(round(coords[idx, 0]))
+    #     cy = int(round(coords[idx, 1]))
+    #     patch = vals[
+    #         max(0, cy - 40):cy + 41,
+    #         max(0, cx - 40):cx + 41,
+    #         :,
+    #         :,
+    #     ]
+    #
+    #     print("debug cell:", idx, "xy:", cx, cy, "patch shape:", patch.shape, flush=True)
+    #
+    #     if patch.size:
+    #         print("debug patch min/max:", float(np.nanmin(patch)), float(np.nanmax(patch)), flush=True)
 
-    print("spatial x range:", float(np.nanmin(coords[:, 0])), float(np.nanmax(coords[:, 0])), flush=True)
-    print("spatial y range:", float(np.nanmin(coords[:, 1])), float(np.nanmax(coords[:, 1])), flush=True)
-    print("image y/x:", vals.shape[0], vals.shape[1], flush=True)
-    print("raw image min/max:", float(np.nanmin(vals)), float(np.nanmax(vals)), flush=True)
-
-    for idx in [0, len(coords) // 2, len(coords) - 1]:
-        cx = int(round(coords[idx, 0]))
-        cy = int(round(coords[idx, 1]))
-        patch = vals[
-            max(0, cy - 40):cy + 41,
-            max(0, cx - 40):cx + 41,
-            :,
-            :,
-        ]
-
-        print("debug cell:", idx, "xy:", cx, cy, "patch shape:", patch.shape, flush=True)
-
-        if patch.size:
-            print("debug patch min/max:", float(np.nanmin(patch)), float(np.nanmax(patch)), flush=True)
     # coords = np.asarray(adata.obsm["spatial"], dtype=float)
     # print("spatial x range:", float(np.nanmin(coords[:, 0])), float(np.nanmax(coords[:, 0])), flush=True)
     # print("spatial y range:", float(np.nanmin(coords[:, 1])), float(np.nanmax(coords[:, 1])), flush=True)
