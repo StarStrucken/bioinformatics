@@ -10,7 +10,7 @@ import pyqtgraph as pg
 
 from xenum_axes import build_axis_space
 from xenum_distances import distance_blocks, pair_distance
-from xenum_measurements import DEPRECATED_MEASUREMENTS, MEASUREMENTS, VISIBLE_MEASUREMENTS
+from xenum_measurements import DEPRECATED_MEASUREMENTS, MEASUREMENTS, OPTIONAL_MEASUREMENTS, VISIBLE_MEASUREMENTS
 from xenum_paths import existing_out_dir
 
 MAX_VISIBLE_EDGES = 12_000
@@ -50,6 +50,7 @@ def discover_measurements(out_dir: Path):
             found.append(m)
 
     ordered = [m for m in VISIBLE_MEASUREMENTS if m in found]
+    ordered.extend(m for m in OPTIONAL_MEASUREMENTS if m in found and m not in ordered)
     ordered.extend(m for m in found if m not in ordered and m not in MEASUREMENTS)
 
     if SHOW_HIDDEN_MEASUREMENTS:
@@ -1126,6 +1127,7 @@ class MeasurementPanel(QtWidgets.QWidget):
 
     def _core(self):
         keep = set(VISIBLE_MEASUREMENTS)
+        keep.update(m for m in OPTIONAL_MEASUREMENTS if m in self.boxes)
         keep.update(m for m in self.boxes if m.startswith("learned"))
         for m, cb in self.boxes.items():
             cb.blockSignals(True)

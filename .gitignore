@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Env
+.venv/
+venv/
+env/
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Local data
+downloads/
+data/
+logs/
+*.part
+
+# Generated outputs
+outputs/*
+!outputs/bench_*.csv
+!outputs/*/
+outputs/*/*
+!outputs/*/reports/
+!outputs/*/reports/**
+outputs/*/cache/
+outputs/*/diagnostics/
+
+# HPC
+slurm-*.out
+*.sbatch.out
+*.sbatch.err
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
