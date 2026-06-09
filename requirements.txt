@@ -1,2 +1,0 @@
--r requirements-hpc.txt
--r requirements-ui.txt
