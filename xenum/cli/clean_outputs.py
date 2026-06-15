@@ -20,8 +20,7 @@ REMOVE_FILE_PATTERNS = [
     "representation*.npz",
     "bench*.csv",
     "best_k_by_measurement.csv",
-    "learned_mix*.csv",
-    "learned_mix*.json",
+    "learned_mix_weights.json",
     "summary.json",
 ]
 

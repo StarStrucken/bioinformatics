@@ -1,10 +1,22 @@
 from __future__ import annotations
 
+import os
+
 try:
     from tqdm.auto import tqdm
 except Exception:
     def tqdm(x, **kwargs):
         return x
+
+def int_env(name, default):
+    try:
+        return max(1, int(os.environ.get(name, default)))
+    except (TypeError, ValueError):
+        return max(1, int(default))
+
+def learned_mix_default_workers():
+    cpus = int_env("SLURM_CPUS_PER_TASK", os.cpu_count() or 1)
+    return max(1, min(8, cpus))
 
 K = 4
 BENCH_K_VALUES = (1, 2, 3, 4, 5, 8, 12, 16, 24, 32)
@@ -23,6 +35,7 @@ LEARNED_WEIGHT_VALUES = (0.0, 0.25, 0.5, 1.0, 2.0)
 LEARNED_MIN_COVERAGE = 0.95
 LEARNED_SCORE_MODE = "median_p90"
 LEARNED_P90_WEIGHT = 0.5
+LEARNED_MIX_WORKERS = int_env("XENUM_LEARNED_MIX_WORKERS", learned_mix_default_workers())
 
 BEST_K_MIN_PRED_SPREAD_RATIO = 0.35
 LEARNED_MIN_PRED_SPREAD_RATIO = 0.35

@@ -1,2 +1,2 @@
 dataset,measurement,k,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
-tiny_mouse_ileum_multimodal_v3,morphology_image,1,7.829024314880371,24.670175552368164,0.9722222222222222,1.0960277818424176,0.8803716051841302,2,7.143089294433594
+tiny_mouse_ileum_multimodal_v3,learned_mix,1,7.326172351837158,12.086442947387695,0.9722222222222222,1.0256307950043737,0.8238260418968985,2,7.143089294433594

@@ -387,6 +387,21 @@
       "raw_directed_edges": 85,
       "kept_directed_edges": 84,
       "pruned_directed_edges": 1
+    },
+    "learned_mix": {
+      "measurement": "learned_mix",
+      "label": "learned_expression0.25_morphology0.5_morphology_image1_seq_jaccard0.5_seq_jaccard_all0.5_seq_blast0.5",
+      "n_nodes": 36,
+      "n_edges": 98,
+      "n_components": 1,
+      "largest_component": 36,
+      "singletons": 0,
+      "neighbor_distance_median": 0.8279666602611542,
+      "neighbor_distance_max": 1.2619563341140747,
+      "neighbor_cutoff": 1.2784390449523926,
+      "raw_directed_edges": 99,
+      "kept_directed_edges": 98,
+      "pruned_directed_edges": 1
     }
   }
 }

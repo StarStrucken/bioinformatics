@@ -2,6 +2,7 @@
 set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/precalc.sh"
 cd "$REPO_ROOT"
 
 if [[ "$#" -ne 0 ]]; then
@@ -9,7 +10,7 @@ if [[ "$#" -ne 0 ]]; then
   exit 2
 fi
 
-bash scripts/precalc_all.sh
+mkdir -p outputs
 
 dump_needs_clean() {
   local dataset_id="$1"
@@ -48,13 +49,25 @@ dump_needs_clean() {
     xenum_paths.py
 }
 
+reset_report_outputs() {
+  local dataset_id="$1"
+  local out_dir="outputs/$dataset_id"
+
+  if [[ -d "$out_dir/reports" ]]; then
+    rm -rf "$out_dir/reports"
+  fi
+}
+
 for dataset_id in $(dataset_ids); do
+  precalc_dataset "$dataset_id"
+
   echo "=== dump learned=True $dataset_id ==="
 
   if dump_needs_clean "$dataset_id"; then
     python -m xenum.cli.clean_outputs "$dataset_id"
   fi
 
+  reset_report_outputs "$dataset_id"
   python -m xenum.dump.cli "$dataset_id"
   python -m xenum.reports.render "$dataset_id"
 done

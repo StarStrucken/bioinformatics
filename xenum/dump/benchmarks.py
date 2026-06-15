@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import json
+import multiprocessing as mp
 
 import numpy as np
 import pandas as pd
 
 from xenum_measurements import MEASUREMENTS
 
-from .config import BEST_K_MIN_PRED_SPREAD_RATIO, LEARNED_MIN_COVERAGE, LEARNED_MIN_PRED_SPREAD_RATIO, LEARNED_MIX_NAME, LEARNED_P90_WEIGHT, LEARNED_WEIGHT_VALUES, tqdm
+from .config import BEST_K_MIN_PRED_SPREAD_RATIO, K, LEARNED_MIN_COVERAGE, LEARNED_MIN_PRED_SPREAD_RATIO, LEARNED_MIX_NAME, LEARNED_MIX_WORKERS, LEARNED_P90_WEIGHT, LEARNED_WEIGHT_VALUES, tqdm
 from .graph import checks, edges_from_neighbor_lists, load_or_make_pairs, neighbor_lists_from_pairs, prediction_from_edges
 from .io import write_pair_cache
 from .npz import write_npz
+
+_LEARNED_CONTEXT = {}
 
 def add_spatial_reference(df):
     df = df.copy()
@@ -228,6 +232,142 @@ def combine_pair_tables(pair_tables, weights):
 
     return out
 
+def learned_mix_candidate(row, weights, kk, label):
+    spread_ok = (
+        row.get("pred_spread_ratio") is None
+        or row.get("pred_spread_ratio") >= LEARNED_MIN_PRED_SPREAD_RATIO
+    )
+
+    if row["coverage"] < LEARNED_MIN_COVERAGE or not spread_ok or row["median_xy_error"] is None:
+        return None
+
+    median_err = float(row["median_xy_error"])
+
+    if row["p90_xy_error"] is None or not np.isfinite(row["p90_xy_error"]):
+        p90_err = np.inf
+    else:
+        p90_err = float(row["p90_xy_error"])
+
+    main_score = median_err + LEARNED_P90_WEIGHT * p90_err
+
+    return {
+        "score": (
+            main_score,
+            median_err,
+            p90_err,
+            int(kk),
+            label,
+        ),
+        "weights": weights.copy(),
+    }
+
+def evaluate_learned_weights(index, weights, pair_tables, dataset_id, nodes, blocks, node_cols, bench_k_values):
+    label = learned_label(weights)
+    pairs = combine_pair_tables(pair_tables, weights)
+    best = neighbor_lists_from_pairs(len(nodes), pairs)
+    rows = []
+    best_item = None
+
+    for kk in bench_k_values:
+        edges, graph_nodes = edges_from_neighbor_lists(
+            nodes[node_cols],
+            blocks,
+            LEARNED_MIX_NAME,
+            best,
+            kk,
+        )
+
+        pred_df, row = prediction_from_edges(
+            dataset_id,
+            nodes[node_cols],
+            edges,
+            LEARNED_MIX_NAME,
+            kk,
+        )
+
+        row["label"] = label
+
+        for name, w in weights.items():
+            row[f"weight_{name}"] = float(w)
+
+        rows.append(row)
+
+        item = learned_mix_candidate(row, weights, kk, label)
+        if item is not None and (best_item is None or item["score"] < best_item["score"]):
+            best_item = item
+
+    return index, rows, best_item
+
+def evaluate_learned_weights_from_context(index, weights):
+    ctx = _LEARNED_CONTEXT
+    return evaluate_learned_weights(
+        index,
+        weights,
+        ctx["pair_tables"],
+        ctx["dataset_id"],
+        ctx["nodes"],
+        ctx["blocks"],
+        ctx["node_cols"],
+        ctx["bench_k_values"],
+    )
+
+def learned_mix_process_context():
+    try:
+        return mp.get_context("fork")
+    except ValueError:
+        return None
+
+def learned_mix_grid_valid(grid, base_measurements):
+    required = {
+        "k",
+        "coverage",
+        "median_xy_error",
+        "p90_xy_error",
+    }
+
+    if grid.empty or not required.issubset(grid.columns):
+        return False
+
+    for name in base_measurements:
+        if f"weight_{name}" not in grid.columns:
+            return False
+
+    return True
+
+def learned_mix_weights_from_row(row, base_measurements):
+    return {
+        name: float(row[f"weight_{name}"])
+        for name in base_measurements
+    }
+
+def learned_mix_best_from_grid(grid, base_measurements):
+    best_item = None
+
+    for row in grid.to_dict("records"):
+        weights = learned_mix_weights_from_row(row, base_measurements)
+        label = str(row.get("label") or learned_label(weights))
+        item = learned_mix_candidate(row, weights, int(row["k"]), label)
+
+        if item is not None and (best_item is None or item["score"] < best_item["score"]):
+            best_item = item
+
+    return best_item
+
+def write_learned_mix_top(out_dir, grid):
+    top = grid.copy()
+    top["score"] = top["median_xy_error"] + LEARNED_P90_WEIGHT * top["p90_xy_error"]
+
+    if "pred_spread_ratio" in top.columns:
+        top = top.sort_values(
+            ["score", "median_xy_error", "p90_xy_error", "pred_spread_ratio", "k"],
+            ascending=[True, True, True, False, True],
+        ).head(30)
+    else:
+        top = top.sort_values(["score", "median_xy_error", "p90_xy_error", "k"]).head(30)
+
+    top.to_csv(out_dir / "learned_mix_top.csv", index=False)
+    return top
+
 def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_values, base_measurements):
     pair_tables = {}
 
@@ -242,83 +382,110 @@ def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_value
         "blocks": {},
     }
 
-    for weights in tqdm(
-        list(learned_weight_grid(base_measurements, LEARNED_WEIGHT_VALUES)),
-        desc="learned mix",
-    ):
-        label = learned_label(weights)
-        pairs = combine_pair_tables(pair_tables, weights)
-        best = neighbor_lists_from_pairs(len(nodes), pairs)
+    grid_path = out_dir / "learned_mix_grid.csv"
 
-        for kk in bench_k_values:
-            edges, graph_nodes = edges_from_neighbor_lists(
-                nodes[node_cols],
-                blocks,
-                LEARNED_MIX_NAME,
-                best,
-                kk,
-            )
+    if grid_path.exists():
+        grid = pd.read_csv(grid_path)
 
-            pred_df, row = prediction_from_edges(
-                dataset_id,
-                nodes[node_cols],
-                edges,
-                LEARNED_MIX_NAME,
-                kk,
-            )
-
-            row["label"] = label
-
-            for name, w in weights.items():
-                row[f"weight_{name}"] = float(w)
-
-            rows.append(row)
-
-            spread_ok = (
-                row.get("pred_spread_ratio") is None
-                or row.get("pred_spread_ratio") >= LEARNED_MIN_PRED_SPREAD_RATIO
-            )
-
-            if row["coverage"] >= LEARNED_MIN_COVERAGE and spread_ok and row["median_xy_error"] is not None:
-                median_err = float(row["median_xy_error"])
-
-                if row["p90_xy_error"] is None or not np.isfinite(row["p90_xy_error"]):
-                    p90_err = np.inf
-                else:
-                    p90_err = float(row["p90_xy_error"])
-
-                main_score = median_err + LEARNED_P90_WEIGHT * p90_err
-
-                score = (
-                    main_score,
-                    median_err,
-                    p90_err,
-                    int(kk),
-                    label,
-                )
-
-                item = {
-                    "score": score,
-                    "weights": weights.copy(),
-                }
-
-                if best_item is None or score < best_item["score"]:
-                    best_item = item
-
-    grid = pd.DataFrame(rows)
-    grid.to_csv(out_dir / "learned_mix_grid.csv", index=False)
-
-    top = grid.copy()
-    top["score"] = top["median_xy_error"] + LEARNED_P90_WEIGHT * top["p90_xy_error"]
-
-    if "pred_spread_ratio" in top.columns:
-        top = top.sort_values(
-            ["score", "median_xy_error", "p90_xy_error", "pred_spread_ratio", "k"],
-            ascending=[True, True, True, False, True],
-        ).head(30)
+        if learned_mix_grid_valid(grid, base_measurements):
+            print(f"learned mix grid reused: {grid_path}", flush=True)
+            best_item = learned_mix_best_from_grid(grid, base_measurements)
+            write_learned_mix_top(out_dir, grid)
+        else:
+            print(f"learned mix grid ignored: incompatible {grid_path}", flush=True)
+            grid = None
     else:
-        top = top.sort_values(["score", "median_xy_error", "p90_xy_error", "k"]).head(30)
-    top.to_csv(out_dir / "learned_mix_top.csv", index=False)
+        grid = None
+
+    if grid is None:
+        weight_sets = list(learned_weight_grid(base_measurements, LEARNED_WEIGHT_VALUES))
+        workers = min(int(LEARNED_MIX_WORKERS), len(weight_sets))
+
+        print(f"learned mix weight sets={len(weight_sets)} workers={workers}", flush=True)
+
+        if workers <= 1:
+            results = [
+                evaluate_learned_weights(
+                    i,
+                    weights,
+                    pair_tables,
+                    dataset_id,
+                    nodes,
+                    blocks,
+                    node_cols,
+                    bench_k_values,
+                )
+                for i, weights in enumerate(tqdm(weight_sets, desc="learned mix"))
+            ]
+        else:
+            results = []
+            mp_context = learned_mix_process_context()
+
+            if mp_context is not None:
+                executor_cls = ProcessPoolExecutor
+                executor_kwargs = {
+                    "max_workers": workers,
+                    "mp_context": mp_context,
+                }
+                submit_args = [
+                    (evaluate_learned_weights_from_context, i, weights)
+                    for i, weights in enumerate(weight_sets)
+                ]
+                _LEARNED_CONTEXT.update({
+                    "pair_tables": pair_tables,
+                    "dataset_id": dataset_id,
+                    "nodes": nodes,
+                    "blocks": blocks,
+                    "node_cols": node_cols,
+                    "bench_k_values": bench_k_values,
+                })
+                worker_mode = "processes"
+            else:
+                executor_cls = ThreadPoolExecutor
+                executor_kwargs = {
+                    "max_workers": workers,
+                }
+                submit_args = [
+                    (
+                        evaluate_learned_weights,
+                        i,
+                        weights,
+                        pair_tables,
+                        dataset_id,
+                        nodes,
+                        blocks,
+                        node_cols,
+                        bench_k_values,
+                    )
+                    for i, weights in enumerate(weight_sets)
+                ]
+                worker_mode = "threads"
+
+            print(f"learned mix worker mode={worker_mode}", flush=True)
+
+            try:
+                with executor_cls(**executor_kwargs) as pool:
+                    futures = [
+                        pool.submit(fn, *args)
+                        for fn, *args in submit_args
+                    ]
+
+                    for future in tqdm(as_completed(futures), total=len(futures), desc="learned mix"):
+                        results.append(future.result())
+            finally:
+                _LEARNED_CONTEXT.clear()
+
+            results.sort(key=lambda x: x[0])
+
+        for _, part_rows, item in results:
+            rows.extend(part_rows)
+
+            if item is not None and (best_item is None or item["score"] < best_item["score"]):
+                best_item = item
+
+        grid = pd.DataFrame(rows)
+        grid.to_csv(grid_path, index=False)
+        write_learned_mix_top(out_dir, grid)
 
     if best_item is None:
         return [], {}
