@@ -4,27 +4,22 @@ from __future__ import annotations
 import argparse
 import json
 
-from dump_xenum import (
-    CACHE_DIR,
-    EXPRESSION_PCS,
-    HIDDEN_MEASUREMENTS,
-    NODE_BASE_COLS,
-    OPTIONAL_MEASUREMENTS,
-    TOP_GENES_PER_CELL,
-    VISIBLE_MEASUREMENTS,
+from xenum_measurements import HIDDEN_MEASUREMENTS, OPTIONAL_MEASUREMENTS, VISIBLE_MEASUREMENTS
+from xenum_paths import out_dir as make_out_dir
+from xenum_paths import data_dir
+
+from .config import CACHE_DIR, EXPRESSION_PCS, NODE_BASE_COLS, TOP_GENES_PER_CELL
+from .features import (
     available_measurements,
     build_blocks,
-    data_dir,
     detected_gene_ids,
     load_morphology_image_blocks,
-    load_or_make_pairs,
-    load_xenium,
     make_nodes,
-    make_output_sections,
     measurement_available,
     top_gene_ids,
 )
-from xenum_paths import out_dir as make_out_dir
+from .graph import load_or_make_pairs
+from .io import load_xenium, make_output_sections
 
 def parse_args():
     p = argparse.ArgumentParser()

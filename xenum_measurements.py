@@ -1,94 +1,161 @@
 MEASUREMENTS = {
-    # adata.X -> log1p CPM -> sklearn.decomposition.TruncatedSVD/PCA
+    # Expression PCs from adata.X: library-size normalize to CPM, log1p, then
+    # TruncatedSVD/PCA and z-score. Exported back to nodes.csv as expression_pc*.
+    # Distance: Euclidean norm on the weighted expression block embedding.
+    # Refs: xenum/dump/features.py:169-187, xenum/dump/cli.py:66-73
+    #       xenum/dump/features.py:217-224, xenum/dump/graph.py:15-25
     "expression": {
         "label": "expression",
         "blocks": {"expression": 1.0},
     },
 
-    # cells["cell_area"], cells["nucleus_area"]; nucleus_area / cell_area
+    # Cell-shape block from the Xenium cells table: cell_area, nucleus_area,
+    # and nucleus_area / cell_area, then z-scored for distance calculations.
+    # Distance: Euclidean norm on the weighted morphology block embedding.
+    # Refs: xenum/dump/features.py:189-215, xenum/dump/features.py:217-224
+    #       xenum/dump/graph.py:15-25
     "morphology": {
         "label": "morphology",
         "blocks": {"morphology": 1.0},
     },
 
-    # cache/morphology_image_features.parquet; squidpy/cpmeasure image features
+    # Full morphology-image feature table. Produced by Squidpy image features
+    # and written as cache/morphology_image_features.parquet. In normal runs
+    # this is the legacy copy of morphology_image_all_features.parquet.
+    # Distance: Euclidean norm on the z-scored morphology-image feature block.
+    # Refs: xenum/image/run_morphology.py:488-538, xenum/dump/config.py:35-41
+    #       xenum/dump/features.py:75-145, xenum/dump/cli.py:48-58
+    #       xenum/dump/features.py:217-224, xenum/dump/graph.py:15-25
     "morphology_image": {
         "label": "morphology_image",
         "blocks": {"morphology_image": 1.0},
     },
 
+    # Squidpy "summary" image features from per-cell morphology crops.
+    # Distance: Euclidean norm on the z-scored summary feature block.
+    # Refs: xenum/image/run_morphology.py:488-538, xenum/dump/config.py:42-45
+    #       xenum/dump/features.py:75-145, xenum/dump/cli.py:48-58
+    #       xenum/dump/features.py:217-224, xenum/dump/graph.py:15-25
     "morphology_image_summary": {
         "label": "morphology_image_summary",
         "blocks": {"morphology_image_summary": 1.0},
     },
 
+    # Squidpy "histogram" image features from per-cell morphology crops.
+    # Distance: Euclidean norm on the z-scored histogram feature block.
+    # Refs: xenum/image/run_morphology.py:488-538, xenum/dump/config.py:46-49
+    #       xenum/dump/features.py:75-145, xenum/dump/cli.py:48-58
+    #       xenum/dump/features.py:217-224, xenum/dump/graph.py:15-25
     "morphology_image_histogram": {
         "label": "morphology_image_histogram",
         "blocks": {"morphology_image_histogram": 1.0},
     },
 
+    # Squidpy "texture" image features from per-cell morphology crops.
+    # Distance: Euclidean norm on the z-scored texture feature block.
+    # Refs: xenum/image/run_morphology.py:488-538, xenum/dump/config.py:50-53
+    #       xenum/dump/features.py:75-145, xenum/dump/cli.py:48-58
+    #       xenum/dump/features.py:217-224, xenum/dump/graph.py:15-25
     "morphology_image_texture": {
         "label": "morphology_image_texture",
         "blocks": {"morphology_image_texture": 1.0},
     },
 
+    # Combined morphology-image feature table: summary + histogram + texture.
+    # Distance: Euclidean norm on the z-scored combined feature block.
+    # Refs: xenum/image/run_morphology.py:488-538, xenum/dump/config.py:54-57
+    #       xenum/dump/features.py:75-145, xenum/dump/cli.py:48-58
+    #       xenum/dump/features.py:217-224, xenum/dump/graph.py:15-25
     "morphology_image_all": {
         "label": "morphology_image_all",
         "blocks": {"morphology_image_all": 1.0},
     },
 
-    # adata.X row nonzero values -> top 32 gene ids; Jaccard distance
+    # Sequence-like top-gene baseline: top 32 nonzero genes per adata.X row,
+    # compared with Jaccard distance over gene-id sets.
+    # Distance: 1 - |intersection| / |union| on top_gene_ids.
+    # Refs: xenum/dump/config.py:34, xenum/dump/features.py:22-42
+    #       xenum/dump/graph.py:27-41, xenum/dump/features.py:64-73
     "seq_jaccard": {
         "label": "seq_jaccard_top32",
         "blocks": {},
     },
 
-    # adata.X row nonzero gene ids; Jaccard distance
+    # Sequence-like all-detected-gene baseline: every nonzero gene id per
+    # adata.X row, compared with Jaccard distance over gene-id sets.
+    # Distance: 1 - |intersection| / |union| on detected_gene_ids.
+    # Refs: xenum/dump/features.py:44-73, xenum/dump/graph.py:27-41
     "seq_jaccard_all": {
         "label": "seq_jaccard_all",
         "blocks": {},
     },
 
-    # cells["x_centroid"], cells["y_centroid"]; leaky oracle
+    # Spatial oracle from Xenium centroids. This uses the target x/y coordinates
+    # directly, so it is hidden and marked leaky.
+    # Distance: Euclidean norm on z-scored x_centroid/y_centroid.
+    # Refs: xenum/dump/features.py:189-215, xenum/dump/features.py:217-224
+    #       xenum/dump/graph.py:15-25
     "spatial": {
         "label": "spatial",
         "blocks": {"spatial": 1.0},
     },
 
-    # expression + morphology; old manual mix
+    # Deprecated manual expression + morphology mix. Kept only so old cached
+    # outputs can still be recognized.
+    # Distance: Euclidean norm after concatenating expression and morphology.
+    # Refs: xenum/dump/features.py:217-224, xenum/dump/graph.py:15-25,
+    #       xenum_distances.py:56-59
     # "expr_morph": {
     #     "label": "expression+morphology",
     #     "blocks": {"expression": 1.0, "morphology": 1.0},
     # },
 
-    # expression + morphology; old manual mix
+    # Deprecated manual mix with morphology weighted 2x.
+    # Distance: Euclidean norm after concatenating expression and 2x morphology.
+    # Refs: xenum/dump/features.py:217-224, xenum/dump/graph.py:15-25
     # "morph_heavy": {
     #     "label": "morph_heavy",
     #     "blocks": {"expression": 1.0, "morphology": 2.0},
     # },
 
-    # expression + morphology; old duplicate when spatial weight is 0
+    # Deprecated expression + morphology + spatial mixer with spatial weight 0.
+    # Distance: sqrt((0 * ||spatial||)^2 + ||expression||^2 + ||morphology||^2).
+    # Refs: xenum/dump/features.py:217-224, xenum/dump/graph.py:15-25,
+    #       xenum_distances.py:49-54
     # "mix_nonspatial": {
     #     "label": "mix_nonspatial",
     #     "blocks": {"spatial": 0.0, "expression": 1.0, "morphology": 1.0},
     # },
 
-    # expression + morphology + cells["x_centroid"], cells["y_centroid"]; leaky
+    # Deprecated leaky expression + morphology + spatial-centroid mix.
+    # Distance: Euclidean norm after concatenating spatial, expression, morphology.
+    # Refs: xenum/dump/features.py:217-224, xenum/dump/graph.py:15-25,
+    #       xenum_distances.py:61-65
     # "expr_morph_spatial": {
     #     "label": "expression+morphology+spatial",
     #     "blocks": {"expression": 1.0, "morphology": 1.0, "spatial": 1.0},
     # },
 
-    # expression + morphology + cells["x_centroid"], cells["y_centroid"]; leaky
+    # Deprecated leaky expression + morphology + spatial mixer.
+    # Distance: sqrt(||spatial||^2 + ||expression||^2 + ||morphology||^2).
+    # Refs: xenum/dump/features.py:217-224, xenum/dump/graph.py:15-25,
+    #       xenum_distances.py:49-54
     # "mix": {
     #     "label": "mix",
     #     "blocks": {"spatial": 1.0, "expression": 1.0, "morphology": 1.0},
     # },
 
-    # adata.X row top ids; old sequence experiment
+    # Deprecated local-alignment sequence baseline over top-gene ids.
+    # Distance: 1 - Smith-Waterman-style local-alignment score / max score.
+    # Refs: xenum_common.py:103-106, xenum_common.py:121-123,
+    #       xenum_distances.py:45-48
     # "seq_local": {"label": "seq_local", "blocks": {}},
 
-    # adata.X row nonzero values -> top 32 gene ids; alignment-like sequence distance
+    # Sequence-like top-gene baseline: top 32 nonzero genes per adata.X row,
+    # compared with a BLAST-like word/local-alignment hybrid.
+    # Distance: 0.35 * word-set distance + 0.65 * local-alignment distance.
+    # Refs: xenum/dump/config.py:34, xenum/dump/features.py:22-42
+    #       xenum/dump/graph.py:27-41, xenum_common.py:108-129
     "seq_blast": {
         "label": "seq_blast_top32",
         "blocks": {},

@@ -12,4 +12,4 @@ mkdir -p logs
 cd "$SLURM_SUBMIT_DIR"
 
 . .venv/bin/activate
-python fetch.py
+bash scripts/fetch.sh

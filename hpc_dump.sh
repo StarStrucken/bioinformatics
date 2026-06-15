@@ -23,5 +23,5 @@ for id in $ids; do
     --cpus-per-task="${CPUS:-16}" \
     --mem="${MEM:-64G}" \
     --output="logs/%x-%j.out" \
-    --wrap="cd '$PWD'; . .venv/bin/activate; python dump_xenum.py '$id'"
+    --wrap="cd '$PWD'; . .venv/bin/activate; bash scripts/dump_xenum.sh '$id'"
 done

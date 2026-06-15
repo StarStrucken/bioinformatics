@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from xenum_image_morphology_config import DATASET_IMAGE_MORPHOLOGY
+from xenum.image.morphology_config import DATASET_IMAGE_MORPHOLOGY
 from xenum_paths import out_dir as make_out_dir
 
 DEFAULT_LABELS_KEY = "cell_labels"

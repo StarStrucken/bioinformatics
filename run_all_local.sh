@@ -16,7 +16,7 @@ for id in $ids; do
 
   echo "=== $id ==="
 
-  python dump_xenum.py "$id" \
+  bash scripts/dump_xenum.sh "$id" \
     > "logs/dump_${id}.out" \
     2> "logs/dump_${id}.err"
 

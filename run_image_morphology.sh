@@ -9,6 +9,8 @@ log_dir="$out_dir/diagnostics"
 
 mkdir -p "$log_dir"
 
-python "$repo_root/run_image_morphology.py" "$dataset_id" \
+cd "$repo_root"
+
+python -m xenum.image.run_morphology "$dataset_id" \
   > "$log_dir/image_morphology.out" \
   2> "$log_dir/image_morphology.err"
