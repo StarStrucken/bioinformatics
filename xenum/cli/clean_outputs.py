@@ -9,8 +9,6 @@ from xenum_paths import existing_out_dir
 
 KEEP_DIRS = {
     "cache",
-    "reports",
-    "diagnostics",
 }
 
 REMOVE_FILE_PATTERNS = [

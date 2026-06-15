@@ -12,4 +12,4 @@ mkdir -p logs
 cd "$SLURM_SUBMIT_DIR"
 
 . .venv/bin/activate
-bash scripts/fetch.sh
+bash scripts/fetch_all.sh

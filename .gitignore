@@ -32,8 +32,17 @@ outputs/*
 !outputs/bench_*.csv
 !outputs/*/
 outputs/*/*
+
+# Keep bulk dumps ignored, but allow small report examples from selected dumps.
 !outputs/*/reports/
-!outputs/*/reports/**
+outputs/*/reports/*
+!outputs/*/reports/summary.json
+!outputs/*/reports/learned_mix_weights.json
+!outputs/*/reports/figures/
+!outputs/*/reports/figures/*.png
+!outputs/*/reports/tables/
+!outputs/*/reports/tables/*.csv
+
 outputs/*/cache/
 outputs/*/diagnostics/
 

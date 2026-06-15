@@ -10,7 +10,7 @@ K = 4
 BENCH_K_VALUES = (1, 2, 3, 4, 5, 8, 12, 16, 24, 32)
 EXPRESSION_PCS = 30
 LEARNED_MIX_NAME = "learned_mix"
-RUN_LEARNED_MIX = False
+RUN_LEARNED_MIX = True
 LEARNED_BASE_MEASUREMENTS = (
     "expression",
     "morphology",
