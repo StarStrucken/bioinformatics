@@ -46,6 +46,16 @@ outputs/*/reports/*
 outputs/*/cache/
 outputs/*/diagnostics/
 
+# Optional external baseline examples.
+!outputs/*/baselines/
+outputs/*/baselines/*
+!outputs/*/baselines/spagcn/
+outputs/*/baselines/spagcn/*
+!outputs/*/baselines/spagcn/README.md
+!outputs/*/baselines/spagcn/summary.json
+!outputs/*/baselines/spagcn/bench_xy.csv
+!outputs/*/baselines/spagcn/domains_summary.csv
+
 # HPC
 slurm-*.out
 *.sbatch.out

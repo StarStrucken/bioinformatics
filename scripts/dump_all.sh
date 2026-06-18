@@ -58,6 +58,44 @@ reset_report_outputs() {
   fi
 }
 
+spagcn_needs_run() {
+  local dataset_id="$1"
+  local out_dir="outputs/$dataset_id"
+  local stamp="$out_dir/baselines/spagcn/summary.json"
+
+  [[ "${XENUM_SPAGCN_FORCE:-0}" == "1" ]] && return 0
+  [[ ! -s "$stamp" ]] && return 0
+  [[ ! -s "$out_dir/baselines/spagcn/bench_xy.csv" ]] && return 0
+
+  newer_than_stamp "$dataset_id" "$stamp" \
+    scripts/spagcn_baseline.sh \
+    xenum/baselines \
+    xenum_paths.py
+}
+
+run_spagcn_baseline() {
+  local dataset_id="$1"
+
+  if [[ "${XENUM_SKIP_SPAGCN:-0}" == "1" ]]; then
+    echo "=== baseline spagcn $dataset_id skipped ==="
+    return
+  fi
+
+  if ! spagcn_needs_run "$dataset_id"; then
+    echo "=== baseline spagcn $dataset_id is current ==="
+    return
+  fi
+
+  echo "=== baseline spagcn $dataset_id ==="
+
+  if [[ "${XENUM_SPAGCN_REQUIRED:-0}" == "1" ]]; then
+    bash scripts/spagcn_baseline.sh "$dataset_id"
+  else
+    bash scripts/spagcn_baseline.sh "$dataset_id" \
+      || echo "spagcn baseline unavailable for $dataset_id; see outputs/$dataset_id/baselines/spagcn/summary.json" >&2
+  fi
+}
+
 for dataset_id in $(dataset_ids); do
   precalc_dataset "$dataset_id"
 
@@ -69,6 +107,7 @@ for dataset_id in $(dataset_ids); do
 
   reset_report_outputs "$dataset_id"
   python -m xenum.dump.cli "$dataset_id"
+  run_spagcn_baseline "$dataset_id"
   python -m xenum.reports.render "$dataset_id"
 done
 

@@ -22,6 +22,10 @@ BENCHMARK_FIGSIZE = (10, 5)
 PNG_METADATA = {
     "Software": "xenum",
 }
+BASELINE_COLORS = {
+    "core": "#4C78A8",
+    "baseline": "#F58518",
+}
 REPORT_EXAMPLE_MEASUREMENTS = (
     "morphology_image",
     "morphology_image_summary",
@@ -45,6 +49,7 @@ def report_dirs(out_dir: Path):
     report_dir = out_dir / "reports"
     table_dir = report_dir / "tables"
     figure_dir = report_dir / "figures"
+    table_dir.mkdir(parents=True, exist_ok=True)
     figure_dir.mkdir(parents=True, exist_ok=True)
     return report_dir, table_dir, figure_dir
 
@@ -106,6 +111,95 @@ def add_report_examples(out_dir: Path, best_df: pd.DataFrame):
 
     return pd.concat([best_df, pd.DataFrame(rows)], ignore_index=True, sort=False)
 
+def row_source(row):
+    source = getattr(row, "source", None)
+
+    if source is None or pd.isna(source):
+        return "core"
+
+    return str(source)
+
+def row_label(row):
+    label = getattr(row, "report_label", None)
+
+    if label is not None and not pd.isna(label):
+        return str(label)
+
+    measurement = str(row.measurement)
+
+    baseline = getattr(row, "baseline", None)
+    if baseline is not None and not pd.isna(baseline) and str(baseline):
+        return f"{baseline}:{measurement}"
+
+    return measurement
+
+def prediction_path_for_row(out_dir: Path, row):
+    path = getattr(row, "prediction_path", None)
+
+    if path is not None and not pd.isna(path) and str(path):
+        return Path(path)
+
+    return out_dir / f"predictions_{row.measurement}_k{int(row.k)}.csv"
+
+def baseline_prediction_path(baseline_dir: Path, measurement: str, k: int):
+    return baseline_dir / f"predictions_{measurement}_k{int(k)}.csv"
+
+def read_baseline_rows(out_dir: Path):
+    rows = []
+
+    for path in sorted((out_dir / "baselines").glob("*/bench_xy.csv")):
+        baseline = path.parent.name
+        bench = pd.read_csv(path)
+
+        if bench.empty:
+            continue
+
+        for row in bench.to_dict("records"):
+            measurement = str(row.get("measurement", baseline))
+            k = int(row.get("k", 0))
+            pred_path = baseline_prediction_path(path.parent, measurement, k)
+
+            row["source"] = "baseline"
+            row["baseline"] = str(row.get("baseline") or baseline)
+            row["report_label"] = f"{row['baseline']}:{measurement}"
+            row["prediction_path"] = str(pred_path)
+            row["figure_name"] = f"prediction_{row['baseline']}_{measurement}.png"
+
+            rows.append(row)
+
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(rows)
+
+def add_baseline_rows(out_dir: Path, best_df: pd.DataFrame):
+    baseline_df = read_baseline_rows(out_dir)
+
+    if baseline_df.empty:
+        return best_df
+
+    core = best_df.copy()
+
+    if "source" not in core.columns:
+        core["source"] = "core"
+
+    if "baseline" not in core.columns:
+        core["baseline"] = ""
+
+    if "report_label" not in core.columns:
+        core["report_label"] = core["measurement"].astype(str)
+    else:
+        core["report_label"] = core["report_label"].fillna("")
+        core.loc[core["report_label"].astype(str).eq(""), "report_label"] = core["measurement"].astype(str)
+
+    if "prediction_path" not in core.columns:
+        core["prediction_path"] = ""
+
+    if "figure_name" not in core.columns:
+        core["figure_name"] = ""
+
+    return pd.concat([core, baseline_df], ignore_index=True, sort=False)
+
 def sample_indices(n, max_n, seed=0):
     if n <= max_n:
         return np.arange(n, dtype=int)
@@ -122,21 +216,22 @@ def finite_prediction_mask(df):
 
     return ok
 
-def prediction_title(measurement, k, df):
+def prediction_title(measurement, k, df, label=None):
     ok = finite_prediction_mask(df)
     err = df.loc[ok, "error"].to_numpy(dtype=float)
+    title = str(label or measurement)
 
     if len(err) == 0:
-        return f"{measurement} k={k}"
+        return f"{title} k={k}"
 
     median = float(np.median(err))
     p90 = float(np.quantile(err, 0.90))
     coverage = float(ok.mean())
 
-    return f"{measurement} k={k}  median={median:.2f}  p90={p90:.2f}  coverage={coverage:.3f}"
+    return f"{title} k={k}  median={median:.2f}  p90={p90:.2f}  coverage={coverage:.3f}"
 
-def render_prediction(out_dir: Path, figure_dir: Path, measurement: str, k: int, error_limits=None):
-    path = out_dir / f"predictions_{measurement}_k{k}.csv"
+def render_prediction(out_dir: Path, figure_dir: Path, measurement: str, k: int, error_limits=None, prediction_path=None, figure_name=None, label=None):
+    path = Path(prediction_path) if prediction_path else out_dir / f"predictions_{measurement}_k{k}.csv"
 
     if not path.exists():
         print(f"skip {measurement}: missing {path}", flush=True)
@@ -203,14 +298,14 @@ def render_prediction(out_dir: Path, figure_dir: Path, measurement: str, k: int,
         label="predicted",
     )
 
-    ax.set_title(prediction_title(measurement, k, df))
+    ax.set_title(prediction_title(measurement, k, df, label=label))
     ax.set_xlabel("x")
     ax.set_ylabel("y * -1")
     ax.set_aspect("equal", adjustable="box")
     ax.legend(loc="best", markerscale=3)
     fig.colorbar(sc, ax=ax, label="prediction error")
 
-    out_path = figure_dir / f"prediction_{measurement}.png"
+    out_path = figure_dir / (figure_name or f"prediction_{measurement}.png")
     fig.tight_layout()
     fig.savefig(out_path, dpi=FIG_DPI, metadata=PNG_METADATA)
     plt.close(fig)
@@ -230,18 +325,19 @@ def render_benchmark_best(table_dir: Path, figure_dir: Path, best_df: pd.DataFra
 
     df = df.sort_values(["median_xy_error", "measurement"])
 
-    labels = [
-        f"{r.measurement}\nk={int(r.k)}"
+    labels = [f"{row_label(r)}\nk={int(r.k)}" for r in df.itertuples(index=False)]
+    vals = df["median_xy_error"].to_numpy(dtype=float)
+    colors = [
+        BASELINE_COLORS["baseline"] if row_source(r) == "baseline" else BASELINE_COLORS["core"]
         for r in df.itertuples(index=False)
     ]
-    vals = df["median_xy_error"].to_numpy(dtype=float)
 
     fig, ax = plt.subplots(figsize=BENCHMARK_FIGSIZE)
-    ax.bar(np.arange(len(df)), vals)
+    ax.bar(np.arange(len(df)), vals, color=colors)
     ax.set_xticks(np.arange(len(df)))
     ax.set_xticklabels(labels, rotation=35, ha="right")
     ax.set_ylabel("xy error")
-    ax.set_title("Best k by measurement: median with p90 whisker")
+    ax.set_title("Best measurement/baseline: median with p90 whisker")
 
     if "p90_xy_error" in df.columns:
         p90 = df["p90_xy_error"].to_numpy(dtype=float)
@@ -267,8 +363,12 @@ def render_benchmark_best(table_dir: Path, figure_dir: Path, best_df: pd.DataFra
 
 def write_report_overview(table_dir: Path, best_df: pd.DataFrame):
     cols = [
+        "source",
+        "baseline",
+        "report_label",
         "measurement",
         "k",
+        "leaky",
         "median_xy_error",
         "p90_xy_error",
         "coverage",
@@ -312,7 +412,7 @@ def global_error_limits(out_dir: Path, best_df: pd.DataFrame):
     vals = []
 
     for r in best_df.itertuples(index=False):
-        path = out_dir / f"predictions_{r.measurement}_k{int(r.k)}.csv"
+        path = prediction_path_for_row(out_dir, r)
 
         if not path.exists():
             continue
@@ -338,6 +438,7 @@ def main():
 
     best_df = read_best_k(out_dir, table_dir)
     best_df = add_report_examples(out_dir, best_df)
+    best_df = add_baseline_rows(out_dir, best_df)
     write_report_overview(table_dir, best_df)
 
     rendered = []
@@ -348,7 +449,21 @@ def main():
         measurement = str(r.measurement)
         k = int(r.k)
 
-        path = render_prediction(out_dir, figure_dir, measurement, k, error_limits=error_limits)
+        prediction_path = prediction_path_for_row(out_dir, r)
+        figure_name = getattr(r, "figure_name", None)
+        if figure_name is not None and (pd.isna(figure_name) or not str(figure_name)):
+            figure_name = None
+
+        path = render_prediction(
+            out_dir,
+            figure_dir,
+            measurement,
+            k,
+            error_limits=error_limits,
+            prediction_path=prediction_path,
+            figure_name=figure_name,
+            label=row_label(r),
+        )
         if path is not None:
             rendered.append(path)
 
