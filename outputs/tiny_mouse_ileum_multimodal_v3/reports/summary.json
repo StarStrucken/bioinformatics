@@ -1,7 +1,7 @@
 {
-  "xenium_dir": "/home/yarro/Projects/some/bioinformatics/data/tiny_mouse_ileum_multimodal_v3",
-  "matrix_path": "/home/yarro/Projects/some/bioinformatics/data/tiny_mouse_ileum_multimodal_v3/cell_feature_matrix.h5",
-  "cells_path": "/home/yarro/Projects/some/bioinformatics/data/tiny_mouse_ileum_multimodal_v3/cells.csv.gz",
+  "xenium_dir": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/data/tiny_mouse_ileum_multimodal_v3",
+  "matrix_path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/data/tiny_mouse_ileum_multimodal_v3/cell_feature_matrix.h5",
+  "cells_path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/data/tiny_mouse_ileum_multimodal_v3/cells.csv.gz",
   "n_cells_loaded": 36,
   "n_cells_dumped": 36,
   "n_genes": 5006,
@@ -27,27 +27,27 @@
     "seq_jaccard_all",
     "seq_blast"
   ],
-  "morphology_image_features_path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_features.parquet",
+  "morphology_image_features_path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_features.parquet",
   "morphology_image_feature_count": 140,
   "morphology_image_blocks": {
     "morphology_image": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_features.parquet",
       "feature_count": 140
     },
     "morphology_image_summary": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_summary_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_summary_features.parquet",
       "feature_count": 20
     },
     "morphology_image_histogram": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_histogram_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_histogram_features.parquet",
       "feature_count": 40
     },
     "morphology_image_texture": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_texture_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_texture_features.parquet",
       "feature_count": 80
     },
     "morphology_image_all": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_all_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_mouse_ileum_multimodal_v3/cache/morphology_image_all_features.parquet",
       "feature_count": 140
     }
   },
@@ -396,7 +396,7 @@
       "n_components": 1,
       "largest_component": 36,
       "singletons": 0,
-      "neighbor_distance_median": 0.8279666602611542,
+      "neighbor_distance_median": 0.8279666900634766,
       "neighbor_distance_max": 1.2619563341140747,
       "neighbor_cutoff": 1.2784390449523926,
       "raw_directed_edges": 99,

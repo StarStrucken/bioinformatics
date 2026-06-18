@@ -1,7 +1,7 @@
 {
-  "xenium_dir": "/home/yarro/Projects/some/bioinformatics/data/tiny_human_ovary_nucexp_v4",
-  "matrix_path": "/home/yarro/Projects/some/bioinformatics/data/tiny_human_ovary_nucexp_v4/cell_feature_matrix.h5",
-  "cells_path": "/home/yarro/Projects/some/bioinformatics/data/tiny_human_ovary_nucexp_v4/cells.csv.gz",
+  "xenium_dir": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/data/tiny_human_ovary_nucexp_v4",
+  "matrix_path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/data/tiny_human_ovary_nucexp_v4/cell_feature_matrix.h5",
+  "cells_path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/data/tiny_human_ovary_nucexp_v4/cells.csv.gz",
   "n_cells_loaded": 632,
   "n_cells_dumped": 632,
   "n_genes": 403,
@@ -27,27 +27,27 @@
     "seq_jaccard_all",
     "seq_blast"
   ],
-  "morphology_image_features_path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_human_ovary_nucexp_v4/cache/morphology_image_features.parquet",
+  "morphology_image_features_path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_human_ovary_nucexp_v4/cache/morphology_image_features.parquet",
   "morphology_image_feature_count": 35,
   "morphology_image_blocks": {
     "morphology_image": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_human_ovary_nucexp_v4/cache/morphology_image_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_human_ovary_nucexp_v4/cache/morphology_image_features.parquet",
       "feature_count": 35
     },
     "morphology_image_summary": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_human_ovary_nucexp_v4/cache/morphology_image_summary_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_human_ovary_nucexp_v4/cache/morphology_image_summary_features.parquet",
       "feature_count": 5
     },
     "morphology_image_histogram": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_human_ovary_nucexp_v4/cache/morphology_image_histogram_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_human_ovary_nucexp_v4/cache/morphology_image_histogram_features.parquet",
       "feature_count": 10
     },
     "morphology_image_texture": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_human_ovary_nucexp_v4/cache/morphology_image_texture_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_human_ovary_nucexp_v4/cache/morphology_image_texture_features.parquet",
       "feature_count": 20
     },
     "morphology_image_all": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_human_ovary_nucexp_v4/cache/morphology_image_all_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_human_ovary_nucexp_v4/cache/morphology_image_all_features.parquet",
       "feature_count": 35
     }
   },
@@ -231,9 +231,9 @@
       "n_components": 2,
       "largest_component": 631,
       "singletons": 1,
-      "neighbor_distance_median": 5.168190002441406,
-      "neighbor_distance_max": 7.163712501525879,
-      "neighbor_cutoff": 7.167537689208984,
+      "neighbor_distance_median": 5.168189525604248,
+      "neighbor_distance_max": 7.1637420654296875,
+      "neighbor_cutoff": 7.167572021484375,
       "raw_directed_edges": 2148,
       "kept_directed_edges": 2137,
       "pruned_directed_edges": 11
@@ -396,9 +396,9 @@
       "n_components": 4,
       "largest_component": 629,
       "singletons": 3,
-      "neighbor_distance_median": 1.2073197960853577,
-      "neighbor_distance_max": 1.7949944734573364,
-      "neighbor_cutoff": 1.843405842781067,
+      "neighbor_distance_median": 1.207319438457489,
+      "neighbor_distance_max": 1.7949951887130737,
+      "neighbor_cutoff": 1.843406081199646,
       "raw_directed_edges": 2220,
       "kept_directed_edges": 2208,
       "pruned_directed_edges": 12
