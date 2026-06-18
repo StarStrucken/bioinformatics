@@ -19,6 +19,16 @@ MAX_LINE_SEGMENTS = 30_000
 MAX_SCATTER_POINTS = 100_000
 PREDICTION_FIGSIZE = (8, 8)
 BENCHMARK_FIGSIZE = (10, 5)
+PNG_METADATA = {
+    "Software": "xenum",
+}
+REPORT_EXAMPLE_MEASUREMENTS = (
+    "morphology_image",
+    "morphology_image_summary",
+    "morphology_image_histogram",
+    "morphology_image_texture",
+    "morphology_image_all",
+)
 
 PREDICTION_ALPHA = 0.85
 REAL_ALPHA = 0.25
@@ -48,6 +58,53 @@ def read_best_k(out_dir: Path, table_dir: Path):
         raise FileNotFoundError("best_k_by_measurement.csv not found")
 
     return pd.read_csv(path)
+
+def prediction_path_exists(out_dir: Path, measurement: str, k: int):
+    return (out_dir / f"predictions_{measurement}_k{int(k)}.csv").exists()
+
+def add_report_examples(out_dir: Path, best_df: pd.DataFrame):
+    bench_path = out_dir / "bench_xy.csv"
+
+    if not bench_path.exists():
+        return best_df
+
+    bench = pd.read_csv(bench_path)
+
+    if bench.empty or "measurement" not in bench.columns or "k" not in bench.columns:
+        return best_df
+
+    existing = set(best_df["measurement"].astype(str)) if "measurement" in best_df.columns else set()
+    rows = []
+
+    for measurement in REPORT_EXAMPLE_MEASUREMENTS:
+        if measurement in existing:
+            continue
+
+        cand = bench[bench["measurement"].astype(str).eq(measurement)].copy()
+
+        if cand.empty:
+            continue
+
+        if "leaky" in cand.columns:
+            cand = cand[~cand["leaky"].astype(bool)]
+
+        cand = cand.dropna(subset=["median_xy_error"])
+
+        if cand.empty:
+            continue
+
+        cand = cand.sort_values(["median_xy_error", "p90_xy_error", "k"], na_position="last")
+
+        for row in cand.to_dict("records"):
+            if prediction_path_exists(out_dir, measurement, int(row["k"])):
+                rows.append(row)
+                existing.add(measurement)
+                break
+
+    if not rows:
+        return best_df
+
+    return pd.concat([best_df, pd.DataFrame(rows)], ignore_index=True, sort=False)
 
 def sample_indices(n, max_n, seed=0):
     if n <= max_n:
@@ -155,7 +212,7 @@ def render_prediction(out_dir: Path, figure_dir: Path, measurement: str, k: int,
 
     out_path = figure_dir / f"prediction_{measurement}.png"
     fig.tight_layout()
-    fig.savefig(out_path, dpi=FIG_DPI)
+    fig.savefig(out_path, dpi=FIG_DPI, metadata=PNG_METADATA)
     plt.close(fig)
 
     print(f"rendered: {out_path}", flush=True)
@@ -202,7 +259,7 @@ def render_benchmark_best(table_dir: Path, figure_dir: Path, best_df: pd.DataFra
 
     out_path = figure_dir / "benchmark_best_k.png"
     fig.tight_layout()
-    fig.savefig(out_path, dpi=FIG_DPI)
+    fig.savefig(out_path, dpi=FIG_DPI, metadata=PNG_METADATA)
     plt.close(fig)
 
     print(f"rendered: {out_path}", flush=True)
@@ -280,6 +337,7 @@ def main():
     _, table_dir, figure_dir = report_dirs(out_dir)
 
     best_df = read_best_k(out_dir, table_dir)
+    best_df = add_report_examples(out_dir, best_df)
     write_report_overview(table_dir, best_df)
 
     rendered = []

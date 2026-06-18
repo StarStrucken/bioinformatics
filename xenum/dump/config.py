@@ -27,9 +27,6 @@ LEARNED_BASE_MEASUREMENTS = (
     "expression",
     "morphology",
     "morphology_image",
-    "seq_jaccard",
-    "seq_jaccard_all",
-    "seq_blast",
 )
 LEARNED_WEIGHT_VALUES = (0.0, 0.25, 0.5, 1.0, 2.0)
 LEARNED_MIN_COVERAGE = 0.95

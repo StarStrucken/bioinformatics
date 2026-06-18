@@ -165,9 +165,6 @@ MEASUREMENTS = {
 VISIBLE_MEASUREMENTS = [
     "expression",
     "morphology",
-    "seq_jaccard",
-    "seq_jaccard_all",
-    "seq_blast",
 ]
 
 OPTIONAL_MEASUREMENTS = [
@@ -190,7 +187,10 @@ DEPRECATED_MEASUREMENTS = {
     "mix_nonspatial",
     "expr_morph_spatial",
     "mix",
+    "seq_jaccard",
+    "seq_jaccard_all",
     "seq_local",
+    "seq_blast",
 }
 
 LEAKY_MEASUREMENTS = {

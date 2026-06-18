@@ -12,9 +12,6 @@ pair_measurements=(
   "expression"
   "morphology"
   "spatial"
-  "seq_jaccard"
-  "seq_jaccard_all"
-  "seq_blast"
 )
 
 optional_pair_measurements=(
