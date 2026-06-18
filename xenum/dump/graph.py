@@ -165,6 +165,9 @@ def finish_edges(nodes, blocks, measurement, edges):
     dst = edges["target"].to_numpy(dtype=np.int64)
     ids = nodes["cell_id"].to_numpy(dtype=str)
 
+    if "neighbor_weight" not in edges.columns:
+        edges["neighbor_weight"] = 1.0
+
     edges["measurement"] = MEASUREMENTS[measurement]["label"]
     edges["xy_distance"] = pair_distance(blocks["spatial"], src, dst)
     edges["expression_distance"] = pair_distance(blocks["expression"], src, dst)
@@ -190,36 +193,46 @@ def checks(nodes, graph_nodes, edges, measurement):
         "singletons": int((graph_nodes["component_size"] == 1).sum()) if len(graph_nodes) else 0,
         "neighbor_distance_median": float(edges["neighbor_distance"].median()) if len(edges) else None,
         "neighbor_distance_max": float(edges["neighbor_distance"].max()) if len(edges) else None,
+        "neighbor_weight_median": float(edges["neighbor_weight"].median()) if len(edges) and "neighbor_weight" in edges.columns else None,
+        "neighbor_weight_max": float(edges["neighbor_weight"].max()) if len(edges) and "neighbor_weight" in edges.columns else None,
         "neighbor_cutoff": edges.attrs.get("neighbor_cutoff"),
         "raw_directed_edges": edges.attrs.get("raw_directed_edges"),
         "kept_directed_edges": edges.attrs.get("kept_directed_edges"),
         "pruned_directed_edges": edges.attrs.get("pruned_directed_edges"),
     }
 
-def prediction_from_edges(dataset_id, nodes, edges, measurement, k):
+def prediction_from_edges(dataset_id, nodes, edges, measurement, k, weight_col=None, directed=False):
     xy = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
     n = len(nodes)
 
     sx = np.zeros(n, dtype=np.float64)
     sy = np.zeros(n, dtype=np.float64)
+    sw = np.zeros(n, dtype=np.float64)
     cnt = np.zeros(n, dtype=np.int64)
 
     for r in edges.itertuples(index=False):
         a = int(r.source)
         b = int(r.target)
+        w = float(getattr(r, weight_col)) if weight_col else 1.0
 
-        sx[a] += xy[b, 0]
-        sy[a] += xy[b, 1]
+        if not np.isfinite(w) or w <= 0:
+            continue
+
+        sx[a] += w * xy[b, 0]
+        sy[a] += w * xy[b, 1]
+        sw[a] += w
         cnt[a] += 1
 
-        sx[b] += xy[a, 0]
-        sy[b] += xy[a, 1]
-        cnt[b] += 1
+        if not directed:
+            sx[b] += w * xy[a, 0]
+            sy[b] += w * xy[a, 1]
+            sw[b] += w
+            cnt[b] += 1
 
-    ok = cnt > 0
+    ok = sw > 0
     pred = np.full((n, 2), np.nan, dtype=np.float32)
-    pred[ok, 0] = sx[ok] / cnt[ok]
-    pred[ok, 1] = sy[ok] / cnt[ok]
+    pred[ok, 0] = sx[ok] / sw[ok]
+    pred[ok, 1] = sy[ok] / sw[ok]
 
     dx = pred[:, 0] - xy[:, 0]
     dy = pred[:, 1] - xy[:, 1]
@@ -258,7 +271,7 @@ def prediction_from_edges(dataset_id, nodes, edges, measurement, k):
         "median_vs_center": float(np.median(ok_err) / np.median(center_err)) if len(ok_err) and np.median(center_err) > 0 else None,
     }
 
-    pred_df = pd.DataFrame({
+    pred_data = {
         "node": np.arange(n, dtype=np.int64),
         "cell_id": nodes["cell_id"].to_numpy(dtype=str),
         "x": xy[:, 0],
@@ -271,6 +284,11 @@ def prediction_from_edges(dataset_id, nodes, edges, measurement, k):
         "used_neighbors": cnt,
         "measurement": measurement,
         "k": int(k),
-    })
+    }
+
+    if weight_col:
+        pred_data["neighbor_weight_sum"] = sw
+
+    pred_df = pd.DataFrame(pred_data)
 
     return pred_df, row

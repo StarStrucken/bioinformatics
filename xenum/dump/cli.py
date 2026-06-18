@@ -9,7 +9,7 @@ from xenum_measurements import ACTIVE_MEASUREMENTS, HIDDEN_MEASUREMENTS, MEASURE
 from xenum_paths import data_dir, out_dir as make_out_dir
 
 from .benchmarks import add_spatial_reference, best_k_by_measurement, run_learned_mix, summarize_benchmarks
-from .config import BENCH_K_VALUES, CUTOFF_MAD, CUTOFF_QUANTILE, DIAGNOSTICS_DIR, EDGE_COLS, EXPRESSION_PCS, K, LEARNED_BASE_MEASUREMENTS, LEARNED_MIN_COVERAGE, LEARNED_MIX_NAME, LEARNED_WEIGHT_VALUES, MIN_EDGES_PER_NODE, NODE_BASE_COLS, REPORT_DIR, RUN_LEARNED_MIX, TOP_GENES_PER_CELL, USE_NEIGHBOR_CUTOFF, tqdm
+from .config import BENCH_K_VALUES, CUTOFF_MAD, CUTOFF_QUANTILE, DIAGNOSTICS_DIR, EDGE_COLS, EXPRESSION_PCS, K, LEARNED_BASE_MEASUREMENTS, LEARNED_MIN_COVERAGE, LEARNED_MIX_MODE, LEARNED_MIX_NAME, LEARNED_MIX_OUTPUT_K, LEARNED_WEIGHT_VALUES, MIN_EDGES_PER_NODE, NODE_BASE_COLS, REPORT_DIR, RUN_LEARNED_MIX, TOP_GENES_PER_CELL, USE_NEIGHBOR_CUTOFF, tqdm
 from .features import available_measurements, build_blocks, detected_gene_ids, load_morphology_image_blocks, make_nodes, measurement_available, top_gene_ids
 from .graph import checks, edges_from_neighbor_lists, load_or_make_pairs, neighbor_lists_from_pairs, prediction_from_edges
 from .io import load_xenium, make_output_sections, mirror_outputs
@@ -116,6 +116,16 @@ def main():
         m for m in LEARNED_BASE_MEASUREMENTS
         if measurement_available(m, blocks)
     ]
+    learned_base_k = {}
+
+    if bench_rows:
+        preliminary_bench = add_spatial_reference(pd.DataFrame(bench_rows))
+        preliminary_best_k = best_k_by_measurement(preliminary_bench, LEARNED_MIN_COVERAGE)
+        learned_base_k = {
+            str(r.measurement): int(r.k)
+            for r in preliminary_best_k.itertuples(index=False)
+            if str(r.measurement) in learned_base_measurements
+        }
 
     if RUN_LEARNED_MIX:
         learned_rows, learned_summaries = run_learned_mix(
@@ -126,6 +136,7 @@ def main():
             node_cols,
             bench_k_values,
             learned_base_measurements,
+            learned_base_k,
         )
     else:
         learned_rows = []
@@ -154,6 +165,7 @@ def main():
         .sort_values(["median_vs_spatial_best", "median_xy_error"])
         .head(10)
     )
+    summary_measurements = list(dict.fromkeys([*measurement_names, *learned_base_measurements]))
 
     print()
     print("bench top non-leaky:", flush=True)
@@ -184,7 +196,10 @@ def main():
         "k": int(K),
         "bench_k_values": bench_k_values,
         "learned_mix_name": LEARNED_MIX_NAME,
+        "learned_mix_mode": LEARNED_MIX_MODE,
+        "learned_mix_output_k": int(LEARNED_MIX_OUTPUT_K),
         "learned_base_measurements": list(learned_base_measurements),
+        "learned_base_k_by_measurement": learned_base_k,
         "morphology_image_features_path": morph_img_path,
         "morphology_image_feature_count": len(morph_img_cols),
         "morphology_image_blocks": morph_img_meta,
@@ -199,7 +214,7 @@ def main():
         "visible_measurements": list(VISIBLE_MEASUREMENTS),
         "hidden_measurements": list(HIDDEN_MEASUREMENTS),
         "active_measurements": measurement_names,
-        "measurement_defs": {m: MEASUREMENTS[m] for m in measurement_names},
+        "measurement_defs": {m: MEASUREMENTS[m] for m in summary_measurements},
         "node_columns": node_cols,
         "edge_columns": EDGE_COLS,
         "edge_summaries": summaries,

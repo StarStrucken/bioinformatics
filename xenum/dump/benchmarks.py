@@ -9,8 +9,8 @@ import pandas as pd
 
 from xenum_measurements import MEASUREMENTS
 
-from .config import BEST_K_MIN_PRED_SPREAD_RATIO, K, LEARNED_MIN_COVERAGE, LEARNED_MIN_PRED_SPREAD_RATIO, LEARNED_MIX_NAME, LEARNED_MIX_WORKERS, LEARNED_P90_WEIGHT, LEARNED_WEIGHT_VALUES, tqdm
-from .graph import checks, edges_from_neighbor_lists, load_or_make_pairs, neighbor_lists_from_pairs, prediction_from_edges
+from .config import BEST_K_MIN_PRED_SPREAD_RATIO, K, LEARNED_MIN_COVERAGE, LEARNED_MIN_PRED_SPREAD_RATIO, LEARNED_MIX_MODE, LEARNED_MIX_NAME, LEARNED_MIX_OUTPUT_K, LEARNED_MIX_WORKERS, LEARNED_P90_WEIGHT, LEARNED_WEIGHT_VALUES, tqdm
+from .graph import checks, edges_from_neighbor_lists, finish_edges, load_or_make_pairs, neighbor_lists_from_pairs, prediction_from_edges
 from .io import write_pair_cache
 from .npz import write_npz
 
@@ -191,7 +191,7 @@ def learned_label(weights):
 
     return "learned_" + "_".join(parts)
 
-def normalized_pair_distances(pairs):
+def pair_distance_scale(pairs):
     d = pairs["distance"].to_numpy(dtype=np.float32)
     ok = np.isfinite(d) & (d > 0)
 
@@ -203,34 +203,255 @@ def normalized_pair_distances(pairs):
     if scale <= 0 or not np.isfinite(scale):
         scale = 1.0
 
-    return d / scale
+    return scale
 
-def combine_pair_tables(pair_tables, weights):
-    first = pair_tables[next(iter(weights))]
-    src = first["source"].to_numpy(dtype=np.int64)
-    dst = first["target"].to_numpy(dtype=np.int64)
+def learned_base_k_map(base_measurements, base_k_by_measurement):
+    out = {}
 
-    acc = np.zeros(len(first), dtype=np.float32)
+    for name in base_measurements:
+        raw = None if base_k_by_measurement is None else base_k_by_measurement.get(name)
 
-    for name, w in weights.items():
-        pairs = pair_tables[name]
+        try:
+            kk = int(raw)
+        except (TypeError, ValueError):
+            kk = int(K)
 
-        if not (
-            np.array_equal(src, pairs["source"].to_numpy(dtype=np.int64))
-            and np.array_equal(dst, pairs["target"].to_numpy(dtype=np.int64))
-        ):
-            raise RuntimeError(f"pair order mismatch for {name}")
-
-        d = normalized_pair_distances(pairs)
-        acc += (float(w) * d) ** 2
-
-    out = pd.DataFrame({
-        "source": src,
-        "target": dst,
-        "distance": np.sqrt(acc).astype(np.float32),
-    })
+        out[name] = max(1, kk)
 
     return out
+
+def base_k_candidate(row, kk):
+    spread_ok = (
+        row.get("pred_spread_ratio") is None
+        or row.get("pred_spread_ratio") >= LEARNED_MIN_PRED_SPREAD_RATIO
+    )
+
+    if row["coverage"] < LEARNED_MIN_COVERAGE or not spread_ok or row["median_xy_error"] is None:
+        return None
+
+    median_err = float(row["median_xy_error"])
+
+    if row["p90_xy_error"] is None or not np.isfinite(row["p90_xy_error"]):
+        p90_err = np.inf
+    else:
+        p90_err = float(row["p90_xy_error"])
+
+    return (
+        median_err + LEARNED_P90_WEIGHT * p90_err,
+        median_err,
+        p90_err,
+        int(kk),
+    )
+
+def infer_learned_base_k(dataset_id, nodes, blocks, node_cols, measurement, pairs, bench_k_values):
+    best = neighbor_lists_from_pairs(len(nodes), pairs)
+    best_score = None
+    best_k = int(K)
+
+    for kk in bench_k_values:
+        edges, _graph_nodes = edges_from_neighbor_lists(
+            nodes[node_cols],
+            blocks,
+            measurement,
+            best,
+            kk,
+        )
+        _pred_df, row = prediction_from_edges(
+            dataset_id,
+            nodes[node_cols],
+            edges,
+            measurement,
+            kk,
+        )
+        score = base_k_candidate(row, kk)
+
+        if score is not None and (best_score is None or score < best_score):
+            best_score = score
+            best_k = int(kk)
+
+    return best_k
+
+def fill_missing_learned_base_k(dataset_id, nodes, blocks, node_cols, pair_tables, bench_k_values, base_measurements, base_k_by_measurement):
+    out = learned_base_k_map(base_measurements, base_k_by_measurement)
+    supplied = set(base_k_by_measurement or {})
+
+    for name in base_measurements:
+        if name in supplied:
+            continue
+
+        out[name] = infer_learned_base_k(
+            dataset_id,
+            nodes,
+            blocks,
+            node_cols,
+            name,
+            pair_tables[name],
+            bench_k_values,
+        )
+        print(f"learned mix inferred base k: {name} k={out[name]}", flush=True)
+
+    return out
+
+def learned_neighbor_candidates(n, pair_tables, base_k_by_measurement):
+    parts = []
+    base_k = learned_base_k_map(pair_tables.keys(), base_k_by_measurement)
+
+    for name, pairs in pair_tables.items():
+        kk = base_k[name]
+        scale = pair_distance_scale(pairs)
+        best = neighbor_lists_from_pairs(n, pairs)
+        rows = []
+
+        for source, vals in enumerate(best):
+            for rank, (target, dist) in enumerate(vals[:kk], start=1):
+                normalized_distance = float(dist) / scale
+
+                if not np.isfinite(normalized_distance):
+                    continue
+
+                rank_weight = 1.0 / float(rank)
+                distance_weight = 1.0 / (1.0 + max(0.0, normalized_distance))
+                base_score = rank_weight * distance_weight
+
+                if base_score <= 0 or not np.isfinite(base_score):
+                    continue
+
+                rows.append((
+                    int(source),
+                    int(target),
+                    name,
+                    int(rank),
+                    float(normalized_distance),
+                    float(base_score),
+                ))
+
+        if rows:
+            parts.append(pd.DataFrame(
+                rows,
+                columns=[
+                    "source",
+                    "target",
+                    "measurement",
+                    "rank",
+                    "normalized_distance",
+                    "base_score",
+                ],
+            ))
+
+    if not parts:
+        return pd.DataFrame(columns=[
+            "source",
+            "target",
+            "measurement",
+            "rank",
+            "normalized_distance",
+            "base_score",
+        ]), base_k
+
+    return pd.concat(parts, ignore_index=True), base_k
+
+def learned_directed_neighbors(candidates, weights):
+    if candidates.empty:
+        return pd.DataFrame(columns=[
+            "source",
+            "target",
+            "neighbor_distance",
+            "neighbor_weight",
+            "support_measurements",
+            "best_rank",
+            "min_normalized_distance",
+        ])
+
+    work = candidates.copy()
+    work["measurement_weight"] = work["measurement"].map(weights).astype(float)
+    work = work[work["measurement_weight"] > 0].copy()
+
+    if work.empty:
+        return pd.DataFrame(columns=[
+            "source",
+            "target",
+            "neighbor_distance",
+            "neighbor_weight",
+            "support_measurements",
+            "best_rank",
+            "min_normalized_distance",
+        ])
+
+    work["neighbor_weight"] = work["measurement_weight"] * work["base_score"]
+    work = work[np.isfinite(work["neighbor_weight"]) & (work["neighbor_weight"] > 0)].copy()
+
+    if work.empty:
+        return pd.DataFrame(columns=[
+            "source",
+            "target",
+            "neighbor_distance",
+            "neighbor_weight",
+            "support_measurements",
+            "best_rank",
+            "min_normalized_distance",
+        ])
+
+    directed = (
+        work
+        .groupby(["source", "target"], sort=False)
+        .agg(
+            neighbor_weight=("neighbor_weight", "sum"),
+            support_measurements=("measurement", "nunique"),
+            best_rank=("rank", "min"),
+            min_normalized_distance=("normalized_distance", "min"),
+        )
+        .reset_index()
+    )
+    directed["neighbor_distance"] = 1.0 / directed["neighbor_weight"]
+
+    return directed.sort_values(["source", "neighbor_distance", "target"]).reset_index(drop=True)
+
+def learned_edges_from_directed(nodes, blocks, directed):
+    if directed.empty:
+        base = pd.DataFrame(columns=["source", "target", "neighbor_distance", "neighbor_weight"])
+    else:
+        source = directed["source"].to_numpy(dtype=np.int64)
+        target = directed["target"].to_numpy(dtype=np.int64)
+
+        base = pd.DataFrame({
+            "source": np.minimum(source, target),
+            "target": np.maximum(source, target),
+            "neighbor_weight": directed["neighbor_weight"].to_numpy(dtype=np.float64),
+        })
+        base = (
+            base
+            .groupby(["source", "target"], sort=False)
+            .agg(neighbor_weight=("neighbor_weight", "sum"))
+            .reset_index()
+        )
+        base["neighbor_distance"] = 1.0 / base["neighbor_weight"]
+        base = base.sort_values(["source", "target"]).reset_index(drop=True)
+
+    base.attrs["neighbor_cutoff"] = np.inf
+    base.attrs["raw_directed_edges"] = int(len(directed))
+    base.attrs["kept_directed_edges"] = int(len(directed))
+    base.attrs["pruned_directed_edges"] = 0
+
+    return finish_edges(nodes, blocks, LEARNED_MIX_NAME, base)
+
+def learned_undirected_edge_count(directed):
+    if directed.empty:
+        return 0
+
+    source = directed["source"].to_numpy(dtype=np.int64)
+    target = directed["target"].to_numpy(dtype=np.int64)
+
+    pairs = pd.DataFrame({
+        "source": np.minimum(source, target),
+        "target": np.maximum(source, target),
+    })
+
+    return int(pairs.drop_duplicates(["source", "target"]).shape[0])
+
+def learned_pair_cache_from_edges(edges):
+    pairs = edges[["source", "target", "neighbor_distance", "neighbor_weight"]].copy()
+    pairs = pairs.rename(columns={"neighbor_distance": "distance"})
+    return pairs
 
 def learned_mix_candidate(row, weights, kk, label):
     spread_ok = (
@@ -261,54 +482,51 @@ def learned_mix_candidate(row, weights, kk, label):
         "weights": weights.copy(),
     }
 
-def evaluate_learned_weights(index, weights, pair_tables, dataset_id, nodes, blocks, node_cols, bench_k_values):
+def annotate_learned_row(row, weights, base_k_by_measurement, label):
+    row["label"] = label
+    row["mix_mode"] = LEARNED_MIX_MODE
+
+    for name, kk in base_k_by_measurement.items():
+        row[f"k_{name}"] = int(kk)
+
+    for name, w in weights.items():
+        row[f"weight_{name}"] = float(w)
+
+    return row
+
+def evaluate_learned_weights(index, weights, candidates, dataset_id, nodes, blocks, node_cols, base_k_by_measurement):
     label = learned_label(weights)
-    pairs = combine_pair_tables(pair_tables, weights)
-    best = neighbor_lists_from_pairs(len(nodes), pairs)
-    rows = []
-    best_item = None
+    directed = learned_directed_neighbors(candidates, weights)
 
-    for kk in bench_k_values:
-        edges, graph_nodes = edges_from_neighbor_lists(
-            nodes[node_cols],
-            blocks,
-            LEARNED_MIX_NAME,
-            best,
-            kk,
-        )
+    _pred_df, row = prediction_from_edges(
+        dataset_id,
+        nodes[node_cols],
+        directed,
+        LEARNED_MIX_NAME,
+        LEARNED_MIX_OUTPUT_K,
+        weight_col="neighbor_weight",
+        directed=True,
+    )
 
-        pred_df, row = prediction_from_edges(
-            dataset_id,
-            nodes[node_cols],
-            edges,
-            LEARNED_MIX_NAME,
-            kk,
-        )
+    row["n_union_edges"] = learned_undirected_edge_count(directed)
+    row["n_directed_neighbors"] = int(len(directed))
+    annotate_learned_row(row, weights, base_k_by_measurement, label)
 
-        row["label"] = label
+    best_item = learned_mix_candidate(row, weights, LEARNED_MIX_OUTPUT_K, label)
 
-        for name, w in weights.items():
-            row[f"weight_{name}"] = float(w)
-
-        rows.append(row)
-
-        item = learned_mix_candidate(row, weights, kk, label)
-        if item is not None and (best_item is None or item["score"] < best_item["score"]):
-            best_item = item
-
-    return index, rows, best_item
+    return index, [row], best_item
 
 def evaluate_learned_weights_from_context(index, weights):
     ctx = _LEARNED_CONTEXT
     return evaluate_learned_weights(
         index,
         weights,
-        ctx["pair_tables"],
+        ctx["candidates"],
         ctx["dataset_id"],
         ctx["nodes"],
         ctx["blocks"],
         ctx["node_cols"],
-        ctx["bench_k_values"],
+        ctx["base_k_by_measurement"],
     )
 
 def learned_mix_process_context():
@@ -317,9 +535,10 @@ def learned_mix_process_context():
     except ValueError:
         return None
 
-def learned_mix_grid_valid(grid, base_measurements):
+def learned_mix_grid_valid(grid, base_measurements, base_k_by_measurement):
     required = {
         "k",
+        "mix_mode",
         "coverage",
         "median_xy_error",
         "p90_xy_error",
@@ -328,8 +547,17 @@ def learned_mix_grid_valid(grid, base_measurements):
     if grid.empty or not required.issubset(grid.columns):
         return False
 
+    if not grid["mix_mode"].astype(str).eq(LEARNED_MIX_MODE).all():
+        return False
+
     for name in base_measurements:
-        if f"weight_{name}" not in grid.columns:
+        if f"weight_{name}" not in grid.columns or f"k_{name}" not in grid.columns:
+            return False
+
+        try:
+            if not grid[f"k_{name}"].astype(int).eq(int(base_k_by_measurement[name])).all():
+                return False
+        except (TypeError, ValueError):
             return False
 
     return True
@@ -368,11 +596,33 @@ def write_learned_mix_top(out_dir, grid):
     top.to_csv(out_dir / "learned_mix_top.csv", index=False)
     return top
 
-def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_values, base_measurements):
+def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_values, base_measurements, base_k_by_measurement=None):
     pair_tables = {}
 
     for m in base_measurements:
         pair_tables[m] = load_or_make_pairs(out_dir, nodes[node_cols], blocks, m)
+
+    learned_base_k = fill_missing_learned_base_k(
+        dataset_id,
+        nodes,
+        blocks,
+        node_cols,
+        pair_tables,
+        bench_k_values,
+        base_measurements,
+        base_k_by_measurement,
+    )
+    candidates, learned_base_k = learned_neighbor_candidates(
+        len(nodes),
+        pair_tables,
+        learned_base_k,
+    )
+
+    print(f"learned mix mode={LEARNED_MIX_MODE} base_k={learned_base_k}", flush=True)
+
+    if candidates.empty:
+        print("learned mix skipped: no neighbor candidates", flush=True)
+        return [], {}
 
     rows = []
     best_item = None
@@ -387,7 +637,7 @@ def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_value
     if grid_path.exists():
         grid = pd.read_csv(grid_path)
 
-        if learned_mix_grid_valid(grid, base_measurements):
+        if learned_mix_grid_valid(grid, base_measurements, learned_base_k):
             print(f"learned mix grid reused: {grid_path}", flush=True)
             best_item = learned_mix_best_from_grid(grid, base_measurements)
             write_learned_mix_top(out_dir, grid)
@@ -408,12 +658,12 @@ def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_value
                 evaluate_learned_weights(
                     i,
                     weights,
-                    pair_tables,
+                    candidates,
                     dataset_id,
                     nodes,
                     blocks,
                     node_cols,
-                    bench_k_values,
+                    learned_base_k,
                 )
                 for i, weights in enumerate(tqdm(weight_sets, desc="learned mix"))
             ]
@@ -432,12 +682,12 @@ def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_value
                     for i, weights in enumerate(weight_sets)
                 ]
                 _LEARNED_CONTEXT.update({
-                    "pair_tables": pair_tables,
+                    "candidates": candidates,
                     "dataset_id": dataset_id,
                     "nodes": nodes,
                     "blocks": blocks,
                     "node_cols": node_cols,
-                    "bench_k_values": bench_k_values,
+                    "base_k_by_measurement": learned_base_k,
                 })
                 worker_mode = "processes"
             else:
@@ -450,12 +700,12 @@ def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_value
                         evaluate_learned_weights,
                         i,
                         weights,
-                        pair_tables,
+                        candidates,
                         dataset_id,
                         nodes,
                         blocks,
                         node_cols,
-                        bench_k_values,
+                        learned_base_k,
                     )
                     for i, weights in enumerate(weight_sets)
                 ]
@@ -498,59 +748,55 @@ def run_learned_mix(out_dir, dataset_id, nodes, blocks, node_cols, bench_k_value
         "blocks": {},
     }
 
-    pairs = combine_pair_tables(pair_tables, best_weights)
-    write_pair_cache(out_dir, LEARNED_MIX_NAME, pairs)
+    directed = learned_directed_neighbors(candidates, best_weights)
+    edges, graph_nodes = learned_edges_from_directed(
+        nodes[node_cols],
+        blocks,
+        directed,
+    )
+    write_pair_cache(out_dir, LEARNED_MIX_NAME, learned_pair_cache_from_edges(edges))
 
-    best = neighbor_lists_from_pairs(len(nodes), pairs)
+    chk = checks(nodes, graph_nodes, edges, LEARNED_MIX_NAME)
+    pred_df, bench_row = prediction_from_edges(
+        dataset_id,
+        nodes[node_cols],
+        directed,
+        LEARNED_MIX_NAME,
+        LEARNED_MIX_OUTPUT_K,
+        weight_col="neighbor_weight",
+        directed=True,
+    )
+    bench_row["n_union_edges"] = int(len(edges))
+    bench_row["n_directed_neighbors"] = int(len(directed))
+    annotate_learned_row(bench_row, best_weights, learned_base_k, best_label)
 
-    bench_rows = []
-    summaries = {}
+    graph_nodes.to_csv(out_dir / f"nodes_{LEARNED_MIX_NAME}_k{LEARNED_MIX_OUTPUT_K}.csv", index=False)
+    edges.to_csv(out_dir / f"edges_{LEARNED_MIX_NAME}_k{LEARNED_MIX_OUTPUT_K}.csv", index=False)
+    pred_df.to_csv(out_dir / f"predictions_{LEARNED_MIX_NAME}_k{LEARNED_MIX_OUTPUT_K}.csv", index=False)
+    (out_dir / f"checks_{LEARNED_MIX_NAME}_k{LEARNED_MIX_OUTPUT_K}.json").write_text(json.dumps(chk, indent=2) + "\n")
 
-    for kk in bench_k_values:
-        edges, graph_nodes = edges_from_neighbor_lists(
-            nodes[node_cols],
-            blocks,
-            LEARNED_MIX_NAME,
-            best,
-            kk,
-        )
+    graph_nodes.to_csv(out_dir / f"nodes_{LEARNED_MIX_NAME}.csv", index=False)
+    edges.to_csv(out_dir / f"edges_{LEARNED_MIX_NAME}.csv", index=False)
+    (out_dir / f"checks_{LEARNED_MIX_NAME}.json").write_text(json.dumps(chk, indent=2) + "\n")
+    write_npz(out_dir, LEARNED_MIX_NAME, graph_nodes, edges)
 
-        chk = checks(nodes, graph_nodes, edges, LEARNED_MIX_NAME)
-        pred_df, bench_row = prediction_from_edges(
-            dataset_id,
-            nodes[node_cols],
-            edges,
-            LEARNED_MIX_NAME,
-            kk,
-        )
-
-        bench_row["label"] = best_label
-
-        for name, w in best_weights.items():
-            bench_row[f"weight_{name}"] = float(w)
-
-        bench_rows.append(bench_row)
-
-        graph_nodes.to_csv(out_dir / f"nodes_{LEARNED_MIX_NAME}_k{kk}.csv", index=False)
-        edges.to_csv(out_dir / f"edges_{LEARNED_MIX_NAME}_k{kk}.csv", index=False)
-        pred_df.to_csv(out_dir / f"predictions_{LEARNED_MIX_NAME}_k{kk}.csv", index=False)
-        (out_dir / f"checks_{LEARNED_MIX_NAME}_k{kk}.json").write_text(json.dumps(chk, indent=2) + "\n")
-
-        if kk == int(K):
-            graph_nodes.to_csv(out_dir / f"nodes_{LEARNED_MIX_NAME}.csv", index=False)
-            edges.to_csv(out_dir / f"edges_{LEARNED_MIX_NAME}.csv", index=False)
-            (out_dir / f"checks_{LEARNED_MIX_NAME}.json").write_text(json.dumps(chk, indent=2) + "\n")
-            write_npz(out_dir, LEARNED_MIX_NAME, graph_nodes, edges)
-            summaries[LEARNED_MIX_NAME] = chk
+    bench_rows = [bench_row]
+    summaries = {
+        LEARNED_MIX_NAME: chk,
+    }
 
     payload = {
         "measurement": LEARNED_MIX_NAME,
+        "mix_mode": LEARNED_MIX_MODE,
         "label": best_label,
+        "k": int(LEARNED_MIX_OUTPUT_K),
         "weights": best_weights,
+        "base_k_by_measurement": learned_base_k,
         "base_measurements": list(base_measurements),
         "weight_values": list(LEARNED_WEIGHT_VALUES),
         "min_coverage": float(LEARNED_MIN_COVERAGE),
         "p90_weight": float(LEARNED_P90_WEIGHT),
+        "neighbor_weight_formula": "measurement_weight * (1 / rank) * (1 / (1 + normalized_distance))",
     }
 
     (out_dir / "learned_mix_weights.json").write_text(json.dumps(payload, indent=2) + "\n")

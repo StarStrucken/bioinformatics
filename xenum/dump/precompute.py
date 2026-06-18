@@ -8,7 +8,7 @@ from xenum_measurements import HIDDEN_MEASUREMENTS, OPTIONAL_MEASUREMENTS, VISIB
 from xenum_paths import out_dir as make_out_dir
 from xenum_paths import data_dir
 
-from .config import CACHE_DIR, EXPRESSION_PCS, NODE_BASE_COLS, TOP_GENES_PER_CELL
+from .config import CACHE_DIR, EXPRESSION_PCS, LEARNED_BASE_MEASUREMENTS, NODE_BASE_COLS, TOP_GENES_PER_CELL
 from .features import (
     available_measurements,
     build_blocks,
@@ -71,8 +71,13 @@ def main():
     nodes[node_cols].to_csv(cache_dir / "nodes_precomputed.csv", index=False)
 
     measurements = available_measurements(blocks)
+    pair_measurements = list(measurements)
 
-    for m in measurements:
+    for m in LEARNED_BASE_MEASUREMENTS:
+        if m not in pair_measurements and measurement_available(m, blocks):
+            pair_measurements.append(m)
+
+    for m in pair_measurements:
         print(f"precompute pairs: {m}", flush=True)
         load_or_make_pairs(out_dir, nodes[node_cols], blocks, m)
 
@@ -83,6 +88,8 @@ def main():
         "n_genes": int(adata.n_vars),
         "expression_pcs": int(EXPRESSION_PCS),
         "measurements": measurements,
+        "pair_measurements": pair_measurements,
+        "learned_base_measurements": list(LEARNED_BASE_MEASUREMENTS),
         "visible_measurements": list(VISIBLE_MEASUREMENTS),
         "optional_measurements": list(OPTIONAL_MEASUREMENTS),
         "hidden_measurements": list(HIDDEN_MEASUREMENTS),

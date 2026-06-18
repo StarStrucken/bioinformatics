@@ -24,27 +24,41 @@ def pred_from_edges(nodes, edges):
 
     sx = np.zeros(n, dtype=float)
     sy = np.zeros(n, dtype=float)
+    sw = np.zeros(n, dtype=float)
     cnt = np.zeros(n, dtype=np.int64)
+    weighted = "neighbor_weight" in edges.columns
 
     for r in edges.itertuples(index=False):
         a = int(r.source)
         b = int(r.target)
+        w = float(r.neighbor_weight) if weighted else 1.0
 
-        sx[a] += xy[b, 0]
-        sy[a] += xy[b, 1]
+        if not np.isfinite(w) or w <= 0:
+            continue
+
+        sx[a] += w * xy[b, 0]
+        sy[a] += w * xy[b, 1]
+        sw[a] += w
         cnt[a] += 1
 
-        sx[b] += xy[a, 0]
-        sy[b] += xy[a, 1]
+        sx[b] += w * xy[a, 0]
+        sy[b] += w * xy[a, 1]
+        sw[b] += w
         cnt[b] += 1
 
-    ok = cnt > 0
+    ok = sw > 0
     pred = np.zeros_like(xy)
-    pred[ok, 0] = sx[ok] / cnt[ok]
-    pred[ok, 1] = sy[ok] / cnt[ok]
+    pred[ok, 0] = sx[ok] / sw[ok]
+    pred[ok, 1] = sy[ok] / sw[ok]
 
     err = np.sqrt(((pred[ok] - xy[ok]) ** 2).sum(axis=1))
     return ok, err
+
+def pred_from_prediction_file(path):
+    pred = pd.read_csv(path)
+    err = pred["error"].to_numpy(float)
+    ok = np.isfinite(err)
+    return ok, err[ok]
 
 def summarize(dataset_id):
     out_dir = existing_out_dir(dataset_id)
@@ -59,7 +73,12 @@ def summarize(dataset_id):
         nodes = pd.read_csv(out_dir / f"nodes_{m}.csv")
         edges = pd.read_csv(out_dir / f"edges_{m}.csv")
 
-        ok, err = pred_from_edges(nodes, edges)
+        learned_pred_path = out_dir / "predictions_learned_mix_k0.csv"
+
+        if m == "learned_mix" and learned_pred_path.exists():
+            ok, err = pred_from_prediction_file(learned_pred_path)
+        else:
+            ok, err = pred_from_edges(nodes, edges)
 
         rows.append({
             "dataset": dataset_id,

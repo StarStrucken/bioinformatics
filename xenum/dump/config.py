@@ -22,11 +22,14 @@ K = 4
 BENCH_K_VALUES = (1, 2, 3, 4, 5, 8, 12, 16, 24, 32)
 EXPRESSION_PCS = 30
 LEARNED_MIX_NAME = "learned_mix"
+LEARNED_MIX_MODE = "neighbor_union_v1"
+LEARNED_MIX_OUTPUT_K = 0
 RUN_LEARNED_MIX = True
 LEARNED_BASE_MEASUREMENTS = (
     "expression",
     "morphology",
     "morphology_image",
+    "seq_jaccard_all",
 )
 LEARNED_WEIGHT_VALUES = (0.0, 0.25, 0.5, 1.0, 2.0)
 LEARNED_MIN_COVERAGE = 0.95
@@ -90,6 +93,7 @@ EDGE_COLS = [
     "source",
     "target",
     "neighbor_distance",
+    "neighbor_weight",
     "xy_distance",
     "expression_distance",
     "morphology_distance",
