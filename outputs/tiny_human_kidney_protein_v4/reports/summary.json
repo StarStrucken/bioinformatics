@@ -1,7 +1,7 @@
 {
-  "xenium_dir": "/home/yarro/Projects/some/bioinformatics/data/tiny_human_kidney_protein_v4",
-  "matrix_path": "/home/yarro/Projects/some/bioinformatics/data/tiny_human_kidney_protein_v4/cell_feature_matrix.h5",
-  "cells_path": "/home/yarro/Projects/some/bioinformatics/data/tiny_human_kidney_protein_v4/cells.csv.gz",
+  "xenium_dir": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/data/tiny_human_kidney_protein_v4",
+  "matrix_path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/data/tiny_human_kidney_protein_v4/cell_feature_matrix.h5",
+  "cells_path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/data/tiny_human_kidney_protein_v4/cells.csv.gz",
   "n_cells_loaded": 358,
   "n_cells_dumped": 358,
   "n_genes": 405,
@@ -27,27 +27,27 @@
     "seq_jaccard_all",
     "seq_blast"
   ],
-  "morphology_image_features_path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_human_kidney_protein_v4/cache/morphology_image_features.parquet",
+  "morphology_image_features_path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_human_kidney_protein_v4/cache/morphology_image_features.parquet",
   "morphology_image_feature_count": 420,
   "morphology_image_blocks": {
     "morphology_image": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_human_kidney_protein_v4/cache/morphology_image_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_human_kidney_protein_v4/cache/morphology_image_features.parquet",
       "feature_count": 420
     },
     "morphology_image_summary": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_human_kidney_protein_v4/cache/morphology_image_summary_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_human_kidney_protein_v4/cache/morphology_image_summary_features.parquet",
       "feature_count": 60
     },
     "morphology_image_histogram": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_human_kidney_protein_v4/cache/morphology_image_histogram_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_human_kidney_protein_v4/cache/morphology_image_histogram_features.parquet",
       "feature_count": 120
     },
     "morphology_image_texture": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_human_kidney_protein_v4/cache/morphology_image_texture_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_human_kidney_protein_v4/cache/morphology_image_texture_features.parquet",
       "feature_count": 240
     },
     "morphology_image_all": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_human_kidney_protein_v4/cache/morphology_image_all_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_human_kidney_protein_v4/cache/morphology_image_all_features.parquet",
       "feature_count": 420
     }
   },
@@ -231,9 +231,9 @@
       "n_components": 1,
       "largest_component": 358,
       "singletons": 0,
-      "neighbor_distance_median": 5.247063159942627,
-      "neighbor_distance_max": 7.389660835266113,
-      "neighbor_cutoff": 7.424659729003906,
+      "neighbor_distance_median": 5.247070550918579,
+      "neighbor_distance_max": 7.389657020568848,
+      "neighbor_cutoff": 7.424661636352539,
       "raw_directed_edges": 1207,
       "kept_directed_edges": 1200,
       "pruned_directed_edges": 7
@@ -387,6 +387,21 @@
       "raw_directed_edges": 854,
       "kept_directed_edges": 849,
       "pruned_directed_edges": 5
+    },
+    "learned_mix": {
+      "measurement": "learned_mix",
+      "label": "learned_expression0.25_morphology0_morphology_image1_seq_jaccard0.125_seq_jaccard_all0.25_seq_blast0.25",
+      "n_nodes": 358,
+      "n_edges": 1003,
+      "n_components": 10,
+      "largest_component": 336,
+      "singletons": 7,
+      "neighbor_distance_median": 0.5584105849266052,
+      "neighbor_distance_max": 1.3750945329666138,
+      "neighbor_cutoff": 1.3938053317785264,
+      "raw_directed_edges": 1042,
+      "kept_directed_edges": 1003,
+      "pruned_directed_edges": 39
     }
   }
 }

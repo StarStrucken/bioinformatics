@@ -1,0 +1,2 @@
+dataset,measurement,k,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
+breast_2fov_v2,learned_mix,1,144.1547088623047,563.4957275390625,0.9956013745704467,59.59507941066948,20.12025230651481,16,2.41890287399292

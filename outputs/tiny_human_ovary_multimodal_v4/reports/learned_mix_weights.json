@@ -1,16 +1,18 @@
 {
   "measurement": "learned_mix",
-  "label": "learned_expression1_morphology0_seq_jaccard1_seq_jaccard_all0.5_seq_blast0.125",
+  "label": "learned_expression0.25_morphology0_morphology_image1_seq_jaccard0.25_seq_jaccard_all0.25_seq_blast0.5",
   "weights": {
-    "expression": 1.0,
+    "expression": 0.25,
     "morphology": 0.0,
-    "seq_jaccard": 1.0,
-    "seq_jaccard_all": 0.5,
-    "seq_blast": 0.125
+    "morphology_image": 1.0,
+    "seq_jaccard": 0.25,
+    "seq_jaccard_all": 0.25,
+    "seq_blast": 0.5
   },
   "base_measurements": [
     "expression",
     "morphology",
+    "morphology_image",
     "seq_jaccard",
     "seq_jaccard_all",
     "seq_blast"

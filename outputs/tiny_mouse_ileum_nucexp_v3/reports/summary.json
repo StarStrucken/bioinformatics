@@ -1,7 +1,7 @@
 {
-  "xenium_dir": "/home/yarro/Projects/some/bioinformatics/data/tiny_mouse_ileum_nucexp_v3",
-  "matrix_path": "/home/yarro/Projects/some/bioinformatics/data/tiny_mouse_ileum_nucexp_v3/cell_feature_matrix.h5",
-  "cells_path": "/home/yarro/Projects/some/bioinformatics/data/tiny_mouse_ileum_nucexp_v3/cells.csv.gz",
+  "xenium_dir": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/data/tiny_mouse_ileum_nucexp_v3",
+  "matrix_path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/data/tiny_mouse_ileum_nucexp_v3/cell_feature_matrix.h5",
+  "cells_path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/data/tiny_mouse_ileum_nucexp_v3/cells.csv.gz",
   "n_cells_loaded": 23,
   "n_cells_dumped": 23,
   "n_genes": 5006,
@@ -27,27 +27,27 @@
     "seq_jaccard_all",
     "seq_blast"
   ],
-  "morphology_image_features_path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/cache/morphology_image_features.parquet",
+  "morphology_image_features_path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/cache/morphology_image_features.parquet",
   "morphology_image_feature_count": 35,
   "morphology_image_blocks": {
     "morphology_image": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/cache/morphology_image_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/cache/morphology_image_features.parquet",
       "feature_count": 35
     },
     "morphology_image_summary": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/cache/morphology_image_summary_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/cache/morphology_image_summary_features.parquet",
       "feature_count": 5
     },
     "morphology_image_histogram": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/cache/morphology_image_histogram_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/cache/morphology_image_histogram_features.parquet",
       "feature_count": 10
     },
     "morphology_image_texture": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/cache/morphology_image_texture_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/cache/morphology_image_texture_features.parquet",
       "feature_count": 20
     },
     "morphology_image_all": {
-      "path": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/cache/morphology_image_all_features.parquet",
+      "path": "/rwthfs/rz/cluster/work/hi202241/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/cache/morphology_image_all_features.parquet",
       "feature_count": 35
     }
   },
@@ -223,9 +223,9 @@
       "n_components": 2,
       "largest_component": 12,
       "singletons": 0,
-      "neighbor_distance_median": 0.04383357614278793,
-      "neighbor_distance_max": 3.356694221496582,
-      "neighbor_cutoff": 3.356694221496582,
+      "neighbor_distance_median": 0.0438334159553051,
+      "neighbor_distance_max": 3.356693744659424,
+      "neighbor_cutoff": 3.356693744659424,
       "raw_directed_edges": 61,
       "kept_directed_edges": 61,
       "pruned_directed_edges": 0
@@ -379,6 +379,21 @@
       "raw_directed_edges": 56,
       "kept_directed_edges": 50,
       "pruned_directed_edges": 6
+    },
+    "learned_mix": {
+      "measurement": "learned_mix",
+      "label": "learned_expression0.125_morphology0.5_morphology_image1_seq_jaccard0.125_seq_jaccard_all0.25_seq_blast1",
+      "n_nodes": 23,
+      "n_edges": 63,
+      "n_components": 1,
+      "largest_component": 23,
+      "singletons": 0,
+      "neighbor_distance_median": 0.9484216570854187,
+      "neighbor_distance_max": 1.6095116138458252,
+      "neighbor_cutoff": 1.635911464691162,
+      "raw_directed_edges": 64,
+      "kept_directed_edges": 63,
+      "pruned_directed_edges": 1
     }
   }
 }
