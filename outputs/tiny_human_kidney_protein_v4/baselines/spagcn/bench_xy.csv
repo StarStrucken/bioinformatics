@@ -1,0 +1,2 @@
+dataset,baseline,measurement,k,leaky,n_nodes,n_edges,coverage,mean_xy_error,median_xy_error,p90_xy_error,center_median_error,median_vs_center
+tiny_human_kidney_protein_v4,spagcn,spagcn_adjacency,12,True,357,2470,1.0,19.99938189444366,2.2394210459857424,7.016930257357425,77.85250312163319,0.02876492028120115

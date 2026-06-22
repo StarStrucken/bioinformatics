@@ -43,7 +43,7 @@ def distance_blocks(nodes):
 
 
 def pair_distance(blocks, measurement, a, b):
-    if measurement in {"align", "seq_local", "seq_jaccard", "seq_blast"}:
+    if measurement in {"align", "seq_local", "seq_jaccard"}:
         return sequence_distance(blocks["align"][a], blocks["align"][b], measurement)
 
     if measurement in {"mix_nonspatial", "mix"}:

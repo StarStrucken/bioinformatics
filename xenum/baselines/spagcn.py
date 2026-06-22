@@ -12,6 +12,10 @@ import time
 import numpy as np
 import pandas as pd
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
 from xenum.dump.io import load_xenium
 from xenum_paths import ROOT, data_dir, out_dir as make_out_dir
 
@@ -19,27 +23,33 @@ BASELINE_NAME = "spagcn"
 DEFAULT_SPAGCN_SOURCE = ROOT / "external" / "SpaGCN" / "SpaGCN_package"
 
 def parse_args():
-    p = argparse.ArgumentParser()
-    p.add_argument("dataset_id")
-    p.add_argument("--out-dir", default=None)
-    p.add_argument("--spagcn-source", default=str(DEFAULT_SPAGCN_SOURCE))
-    p.add_argument("--histology", choices=["auto", "on", "off"], default="auto")
-    p.add_argument("--image", default=None)
-    p.add_argument("--graph-k", type=int, default=12)
-    p.add_argument("--num-pcs", type=int, default=50)
-    p.add_argument("--min-cells", type=int, default=3)
-    p.add_argument("--p", type=float, default=0.5)
-    p.add_argument("--l", type=float, default=None)
-    p.add_argument("--resolution", type=float, default=0.4)
-    p.add_argument("--lr", type=float, default=0.005)
-    p.add_argument("--max-epochs", type=int, default=200)
-    p.add_argument("--tol", type=float, default=5e-3)
-    p.add_argument("--alpha", type=float, default=1.0)
-    p.add_argument("--beta", type=int, default=49)
-    p.add_argument("--seed", type=int, default=100)
-    p.add_argument("--refine-shape", choices=["none", "hexagon", "square"], default="none")
-    p.add_argument("--write-adj", action="store_true")
-    return p.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("dataset_id")
+    return parser.parse_args()
+
+
+def runtime_config(dataset_id):
+    return argparse.Namespace(
+        dataset_id=dataset_id,
+        out_dir=None,
+        spagcn_source=str(DEFAULT_SPAGCN_SOURCE),
+        histology="auto",
+        image=None,
+        graph_k=12,
+        num_pcs=50,
+        min_cells=3,
+        p=0.5,
+        l=None,
+        resolution=0.4,
+        lr=0.005,
+        max_epochs=200,
+        tol=5e-3,
+        alpha=1.0,
+        beta=49,
+        seed=100,
+        refine_shape="none",
+        write_adj=False,
+    )
 
 def baseline_dir(dataset_id, override=None):
     if override:
@@ -49,11 +59,22 @@ def baseline_dir(dataset_id, override=None):
     p.mkdir(parents=True, exist_ok=True)
     return p
 
+def ensure_scipy_sparse_compat():
+    # SPAGCN_COMPAT_VIZ_FIX: SpaGCN still accesses scipy sparse matrices via .A.
+    # New SciPy versions removed that convenience property.
+    import scipy.sparse as sparse
+
+    if not hasattr(sparse.spmatrix, "A"):
+        sparse.spmatrix.A = property(lambda matrix: matrix.toarray())
+
+
 def import_spagcn(source):
     source_path = Path(source)
 
     if source_path.exists():
         sys.path.insert(0, str(source_path))
+
+    ensure_scipy_sparse_compat()
 
     import SpaGCN as spg
     return spg
@@ -62,6 +83,16 @@ def normalize_for_spagcn(adata, spg, min_cells):
     import scanpy as sc
 
     adata = adata.copy()
+
+    cell_totals = np.asarray(adata.X.sum(axis=1)).reshape(-1)
+    keep_cells = np.isfinite(cell_totals) & (cell_totals > 0)
+
+    if not keep_cells.any():
+        raise RuntimeError("SpaGCN preprocessing found no cells with expression counts")
+
+    if not keep_cells.all():
+        adata = adata[keep_cells].copy()
+
     adata.var_names = [str(x).upper() for x in adata.var_names]
     adata.var_names_make_unique()
     adata.var["genename"] = adata.var_names.astype(str)
@@ -72,11 +103,7 @@ def normalize_for_spagcn(adata, spg, min_cells):
     if adata.n_vars == 0:
         raise RuntimeError("SpaGCN preprocessing removed all genes")
 
-    if hasattr(sc.pp, "normalize_per_cell"):
-        sc.pp.normalize_per_cell(adata)
-    else:
-        sc.pp.normalize_total(adata)
-
+    sc.pp.normalize_total(adata, target_sum=1e4)
     sc.pp.log1p(adata)
 
     return adata
@@ -359,6 +386,86 @@ def domain_summary(domains, domain_col):
 
     return pd.DataFrame(rows).sort_values(["domain"]).reset_index(drop=True)
 
+def render_spagcn_figures(out_dir, domains, domain_col):
+    if domains.empty:
+        return {}
+
+    max_points = 100_000
+    indices = np.arange(len(domains), dtype=int)
+    if len(indices) > max_points:
+        rng = np.random.default_rng(0)
+        indices = np.sort(rng.choice(indices, size=max_points, replace=False))
+
+    x = domains["x"].to_numpy(dtype=float)[indices]
+    y = -domains["y"].to_numpy(dtype=float)[indices]
+    domain_values = domains[domain_col].to_numpy()[indices]
+    point_size = max(0.25, min(10.0, 24_000.0 / max(len(indices), 1)))
+
+    outputs = {}
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    scatter = ax.scatter(
+        x,
+        y,
+        c=domain_values,
+        cmap="tab20",
+        s=point_size,
+        linewidths=0,
+        rasterized=True,
+    )
+    ax.set_title(f"SpaGCN spatial domains ({domain_col})")
+    ax.set_xlabel("x")
+    ax.set_ylabel("y * -1")
+    ax.set_aspect("equal", adjustable="box")
+    fig.colorbar(scatter, ax=ax, label="domain")
+    fig.tight_layout()
+    path = out_dir / "domains.png"
+    fig.savefig(path, dpi=180, metadata={"Software": "xenum"})
+    plt.close(fig)
+    outputs["domains_figure"] = path.name
+
+    if "max_probability" in domains.columns:
+        confidence = domains["max_probability"].to_numpy(dtype=float)[indices]
+        fig, ax = plt.subplots(figsize=(8, 8))
+        scatter = ax.scatter(
+            x,
+            y,
+            c=confidence,
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+            s=point_size,
+            linewidths=0,
+            rasterized=True,
+        )
+        ax.set_title("SpaGCN maximum domain probability")
+        ax.set_xlabel("x")
+        ax.set_ylabel("y * -1")
+        ax.set_aspect("equal", adjustable="box")
+        fig.colorbar(scatter, ax=ax, label="max probability")
+        fig.tight_layout()
+        path = out_dir / "confidence.png"
+        fig.savefig(path, dpi=180, metadata={"Software": "xenum"})
+        plt.close(fig)
+        outputs["confidence_figure"] = path.name
+
+    counts = domains[domain_col].value_counts().sort_index()
+    fig_width = max(7.0, min(16.0, 0.45 * len(counts) + 4.0))
+    fig, ax = plt.subplots(figsize=(fig_width, 4.5))
+    ax.bar(np.arange(len(counts)), counts.to_numpy(dtype=int))
+    ax.set_xticks(np.arange(len(counts)))
+    ax.set_xticklabels([str(value) for value in counts.index], rotation=45, ha="right")
+    ax.set_xlabel("domain")
+    ax.set_ylabel("cells")
+    ax.set_title("SpaGCN domain sizes")
+    fig.tight_layout()
+    path = out_dir / "domain_sizes.png"
+    fig.savefig(path, dpi=180, metadata={"Software": "xenum"})
+    plt.close(fig)
+    outputs["domain_sizes_figure"] = path.name
+
+    return outputs
+
 def write_run_note(out_dir, summary):
     lines = [
         "# SpaGCN Baseline",
@@ -376,12 +483,15 @@ def write_run_note(out_dir, summary):
         "- `predictions_spagcn_adjacency_k{}.csv`".format(summary.get("graph_k")),
         "- `bench_xy.csv`",
         "- `domains_summary.csv`",
+        "- `domains.png`",
+        "- `confidence.png`",
+        "- `domain_sizes.png`",
         "- `summary.json`",
     ]
     (out_dir / "README.md").write_text("\n".join(lines) + "\n")
 
-def main():
-    args = parse_args()
+def run(dataset_id):
+    args = runtime_config(dataset_id)
     started = time.perf_counter()
     out = baseline_dir(args.dataset_id, args.out_dir)
 
@@ -414,16 +524,25 @@ def main():
     torch.manual_seed(int(args.seed))
 
     adata_raw = load_xenium(data_dir(args.dataset_id))
+    raw_n_cells = int(adata_raw.n_obs)
+    adata = normalize_for_spagcn(adata_raw, spg, args.min_cells)
+
     nodes = pd.DataFrame({
-        "cell_id": adata_raw.obs["cell_id"].to_numpy(dtype=str),
-        "x_centroid": adata_raw.obs["x_centroid"].to_numpy(dtype=np.float64),
-        "y_centroid": adata_raw.obs["y_centroid"].to_numpy(dtype=np.float64),
+        "cell_id": adata.obs["cell_id"].to_numpy(dtype=str),
+        "x_centroid": adata.obs["x_centroid"].to_numpy(dtype=np.float64),
+        "y_centroid": adata.obs["y_centroid"].to_numpy(dtype=np.float64),
     })
     coords = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float64)
 
     t_adj = time.perf_counter()
     adj, image_meta = calculate_adj(spg, coords, args, out)
     adj_sec = time.perf_counter() - t_adj
+
+    if adata.n_obs != adj.shape[0] or adj.shape[0] != adj.shape[1]:
+        raise RuntimeError(
+            "SpaGCN input shape mismatch after preprocessing: "
+            f"adata={adata.shape}, adjacency={adj.shape}"
+        )
 
     if args.write_adj:
         np.save(out / "adjacency.npy", adj)
@@ -437,7 +556,6 @@ def main():
         "max": float(np.nanmax(adj)) if adj.size else None,
     }
 
-    adata = normalize_for_spagcn(adata_raw, spg, args.min_cells)
     num_pcs = min(int(args.num_pcs), max(1, adata.n_obs - 1), max(1, adata.n_vars - 1))
 
     if args.l is None:
@@ -505,10 +623,13 @@ def main():
     pred_df.to_csv(out / "predictions_spagcn_adjacency_k{}.csv".format(int(args.graph_k)), index=False)
     pd.DataFrame([bench_row]).to_csv(out / "bench_xy.csv", index=False)
     domain_stats.to_csv(out / "domains_summary.csv", index=False)
+    figure_outputs = render_spagcn_figures(out, domains, domain_col)
 
     summary.update({
         "status": "ok",
+        "n_cells_raw": raw_n_cells,
         "n_cells": int(adata.n_obs),
+        "n_cells_removed_zero_counts": raw_n_cells - int(adata.n_obs),
         "n_genes_after_spagcn_filter": int(adata.n_vars),
         "num_pcs": int(num_pcs),
         "domains": int(domains[domain_col].nunique()),
@@ -530,6 +651,7 @@ def main():
             "predictions": "predictions_spagcn_adjacency_k{}.csv".format(int(args.graph_k)),
             "bench_xy": "bench_xy.csv",
             "domains_summary": "domains_summary.csv",
+            **figure_outputs,
         },
         "environment": {
             "python": sys.version,
@@ -543,6 +665,12 @@ def main():
     write_run_note(out, summary)
 
     print("SpaGCN baseline saved: {}".format(out), flush=True)
+
+
+def main():
+    args = parse_args()
+    run(args.dataset_id)
+
 
 if __name__ == "__main__":
     main()

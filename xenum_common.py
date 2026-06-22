@@ -26,15 +26,6 @@ def parse_seq_ids(x):
 
     return tuple(int(v) for v in s.split())
 
-def seq_words(seq, word_size=2):
-    seq = tuple(seq)
-    word_size = max(1, int(word_size))
-
-    if len(seq) < word_size:
-        return ()
-
-    return tuple(seq[i:i + word_size] for i in range(len(seq) - word_size + 1))
-
 def edit_distance(a, b, insert_cost=1.0, delete_cost=1.0, substitute_cost=2.0):
     if a == b:
         return 0.0
@@ -105,27 +96,11 @@ def local_alignment_distance(a, b):
     denom = max(2.0 * min(len(a), len(b)), 1.0)
     return float(np.clip(1.0 - score / denom, 0.0, 1.0))
 
-def blast_like_distance(a, b, word_size=2):
-    wa = set(seq_words(a, word_size))
-    wb = set(seq_words(b, word_size))
-
-    if not wa and not wb:
-        word_dist = 0.0
-    elif not wa or not wb:
-        word_dist = 1.0
-    else:
-        word_dist = 1.0 - len(wa & wb) / max(len(wa | wb), 1)
-
-    return float(np.clip(0.35 * word_dist + 0.65 * local_alignment_distance(a, b), 0.0, 1.0))
-
 def sequence_distance(a, b, measurement):
     if measurement == "seq_local":
         return local_alignment_distance(a, b)
 
     if measurement == "seq_jaccard":
         return jaccard_distance(a, b)
-
-    if measurement == "seq_blast":
-        return blast_like_distance(a, b, 2)
 
     return normalized_edit_distance(a, b)
