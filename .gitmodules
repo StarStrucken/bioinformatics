@@ -4,3 +4,6 @@
 [submodule "external/SpaGCN"]
 	path = external/SpaGCN
 	url = https://github.com/jianhuupenn/SpaGCN.git
+[submodule "external/LUNA"]
+	path = external/LUNA
+	url = https://github.com/StarStrucken/LUNA.git

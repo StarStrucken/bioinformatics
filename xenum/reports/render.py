@@ -26,6 +26,10 @@ BASELINE_COLORS = {
     "core": "#4C78A8",
     "baseline": "#F58518",
 }
+NAMED_BASELINE_COLORS = {
+    "spagcn": "#F58518",
+    "luna": "#54A24B",
+}
 REPORT_EXAMPLE_MEASUREMENTS = (
     "morphology_image",
     "morphology_image_summary",
@@ -118,6 +122,17 @@ def row_source(row):
         return "core"
 
     return str(source)
+
+def row_bar_color(row):
+    if row_source(row) != "baseline":
+        return BASELINE_COLORS["core"]
+    baseline = getattr(row, "baseline", None)
+    if baseline is not None and not pd.isna(baseline):
+        color = NAMED_BASELINE_COLORS.get(str(baseline))
+        if color:
+            return color
+    return BASELINE_COLORS["baseline"]
+
 
 def row_label(row):
     label = getattr(row, "report_label", None)
@@ -334,10 +349,7 @@ def render_benchmark_best(
 
     labels = [f"{row_label(r)}\nk={int(r.k)}" for r in df.itertuples(index=False)]
     vals = df["median_xy_error"].to_numpy(dtype=float)
-    colors = [
-        BASELINE_COLORS["baseline"] if row_source(r) == "baseline" else BASELINE_COLORS["core"]
-        for r in df.itertuples(index=False)
-    ]
+    colors = [row_bar_color(r) for r in df.itertuples(index=False)]
 
     fig, ax = plt.subplots(figsize=BENCHMARK_FIGSIZE)
     ax.bar(np.arange(len(df)), vals, color=colors)
@@ -495,7 +507,7 @@ def main():
         figure_dir,
         comparison,
         filename="benchmark_spagcn_vs_core.png",
-        title="SpaGCN vs best non-leaky methods: median with p90 whisker",
+        title="External baselines vs best non-leaky methods: median with p90 whisker",
     )
     if comparison_path is not None:
         rendered.append(comparison_path)

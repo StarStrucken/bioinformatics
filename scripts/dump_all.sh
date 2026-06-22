@@ -85,6 +85,19 @@ run_spagcn_baseline() {
   "$python_bin" -m xenum.baselines.spagcn "$dataset_id"
 }
 
+
+run_luna_baseline() {
+  local dataset_id="$1"
+
+  if [[ "${XENUM_SKIP_LUNA:-0}" == "1" ]]; then
+    echo "=== baseline luna $dataset_id skipped ==="
+    return
+  fi
+
+  echo "=== baseline luna $dataset_id ==="
+  python -m xenum.baselines.luna "$dataset_id"
+}
+
 for dataset_id in $(dataset_ids); do
   precalc_dataset "$dataset_id"
 
@@ -97,6 +110,7 @@ for dataset_id in $(dataset_ids); do
   reset_report_outputs "$dataset_id"
   python -m xenum.dump.cli "$dataset_id"
   run_spagcn_baseline "$dataset_id"
+  run_luna_baseline "$dataset_id"
   python -m xenum.reports.render "$dataset_id"
 done
 

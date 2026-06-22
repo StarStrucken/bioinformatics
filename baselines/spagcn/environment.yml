@@ -1,0 +1,20 @@
+name: xenum-spagcn
+channels:
+  - conda-forge
+  - pytorch
+dependencies:
+  - python=3.9
+  - pip
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - numba
+  - anndata
+  - scanpy
+  - pytorch
+  - python-igraph
+  - louvain
+  - opencv
+  - pip:
+      - SpaGCN==1.2.7

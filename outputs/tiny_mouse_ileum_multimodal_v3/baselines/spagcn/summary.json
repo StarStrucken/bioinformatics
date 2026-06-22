@@ -35,9 +35,9 @@
     "p90_positive": 512.5057983398438,
     "max": 534.0430297851562
   },
-  "runtime_sec": 33.58399921399541,
-  "adjacency_runtime_sec": 0.0023078240046743304,
-  "train_runtime_sec": 21.320812051009852,
+  "runtime_sec": 34.118160640995484,
+  "adjacency_runtime_sec": 0.0022669299942208454,
+  "train_runtime_sec": 21.32753027700528,
   "outputs": {
     "domains": "domains.csv",
     "probabilities": "probabilities.csv",
@@ -52,7 +52,7 @@
   "environment": {
     "python": "3.14.5 (main, May 10 2026, 18:26:20) [GCC 16.1.1 20260430]",
     "executable": "/home/yarro/Projects/some/biolab/.venv/bin/python",
-    "pid": 171177,
+    "pid": 174527,
     "spagcn_version": "1.2.7"
   }
 }
