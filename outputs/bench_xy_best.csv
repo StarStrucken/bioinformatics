@@ -1,0 +1,6 @@
+dataset,source,baseline,measurement,k,median_vs_center,median_xy_error,coverage
+tiny_human_kidney_protein_v4,core,,morphology_image,1,0.1456746160984039,11.317898750305176,0.9748603351955308
+tiny_human_ovary_multimodal_v4,core,,learned_mix,0,0.0848609805107116,25.28570556640625,1.0
+tiny_human_ovary_nucexp_v4,core,,learned_mix,0,0.3191455006599426,95.54888153076172,1.0
+tiny_mouse_ileum_multimodal_v3,core,,morphology_image,1,0.0330103635787963,7.829024314880371,0.9722222222222222
+tiny_mouse_ileum_nucexp_v3,core,,learned_mix,0,0.0380922742187976,9.56922721862793,1.0

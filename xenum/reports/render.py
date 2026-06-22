@@ -313,7 +313,14 @@ def render_prediction(out_dir: Path, figure_dir: Path, measurement: str, k: int,
     print(f"rendered: {out_path}", flush=True)
     return out_path
 
-def render_benchmark_best(table_dir: Path, figure_dir: Path, best_df: pd.DataFrame):
+def render_benchmark_best(
+    table_dir: Path,
+    figure_dir: Path,
+    best_df: pd.DataFrame,
+    *,
+    filename="benchmark_best_k.png",
+    title="Best measurement/baseline: median with p90 whisker",
+):
     if best_df.empty:
         return None
 
@@ -337,7 +344,7 @@ def render_benchmark_best(table_dir: Path, figure_dir: Path, best_df: pd.DataFra
     ax.set_xticks(np.arange(len(df)))
     ax.set_xticklabels(labels, rotation=35, ha="right")
     ax.set_ylabel("xy error")
-    ax.set_title("Best measurement/baseline: median with p90 whisker")
+    ax.set_title(title)
 
     if "p90_xy_error" in df.columns:
         p90 = df["p90_xy_error"].to_numpy(dtype=float)
@@ -353,7 +360,7 @@ def render_benchmark_best(table_dir: Path, figure_dir: Path, best_df: pd.DataFra
             capsize=2,
         )
 
-    out_path = figure_dir / "benchmark_best_k.png"
+    out_path = figure_dir / filename
     fig.tight_layout()
     fig.savefig(out_path, dpi=FIG_DPI, metadata=PNG_METADATA)
     plt.close(fig)
@@ -470,6 +477,28 @@ def main():
     bench_path = render_benchmark_best(table_dir, figure_dir, best_df)
     if bench_path is not None:
         rendered.append(bench_path)
+
+    comparison = best_df.copy()
+    if not comparison.empty:
+        if "leaky" in comparison.columns:
+            leaky = comparison["leaky"].fillna(False).astype(str).str.lower().isin({"true", "1", "yes"})
+        else:
+            leaky = pd.Series(False, index=comparison.index)
+
+        source = comparison["source"].fillna("core").astype(str) if "source" in comparison.columns else pd.Series("core", index=comparison.index)
+        baseline = comparison["baseline"].fillna("").astype(str) if "baseline" in comparison.columns else pd.Series("", index=comparison.index)
+        keep = (~leaky) | (source.eq("baseline") & baseline.eq("spagcn"))
+        comparison = comparison[keep].copy()
+
+    comparison_path = render_benchmark_best(
+        table_dir,
+        figure_dir,
+        comparison,
+        filename="benchmark_spagcn_vs_core.png",
+        title="SpaGCN vs best non-leaky methods: median with p90 whisker",
+    )
+    if comparison_path is not None:
+        rendered.append(comparison_path)
 
     print(f"figures rendered: {len(rendered)}", flush=True)
     print(f"figures dir: {figure_dir}", flush=True)

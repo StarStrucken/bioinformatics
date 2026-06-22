@@ -1,0 +1,2 @@
+dataset,baseline,measurement,k,leaky,n_nodes,n_edges,coverage,mean_xy_error,median_xy_error,p90_xy_error,center_median_error,median_vs_center
+tiny_human_ovary_multimodal_v4,spagcn,spagcn_adjacency,12,True,623,4236,1.0,2.8793959421416835,2.375105572593109,5.495129306371252,297.9662095734153,0.007971056771817985

@@ -1,2 +1,2 @@
 dataset,measurement,k,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
-tiny_human_ovary_multimodal_v4,learned_mix,1,25.745155334472656,310.8052978515625,0.9935794542536116,10.208056671948592,4.097396787408631,4,2.522042751312256
+tiny_human_ovary_multimodal_v4,learned_mix,0,25.28570556640625,555.67724609375,1.0,10.025883008228043,,4,2.522042751312256

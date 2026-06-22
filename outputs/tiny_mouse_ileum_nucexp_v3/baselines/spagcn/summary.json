@@ -1,0 +1,58 @@
+{
+  "baseline": "spagcn",
+  "dataset": "tiny_mouse_ileum_nucexp_v3",
+  "status": "ok",
+  "output_dir": "/home/yarro/Projects/some/bioinformatics/outputs/tiny_mouse_ileum_nucexp_v3/baselines/spagcn",
+  "spagcn_source": "/home/yarro/Projects/some/bioinformatics/external/SpaGCN/SpaGCN_package",
+  "command": [
+    "/home/yarro/Projects/some/bioinformatics/xenum/baselines/spagcn.py",
+    "tiny_mouse_ileum_nucexp_v3"
+  ],
+  "graph_k": 12,
+  "n_cells_raw": 23,
+  "n_cells": 20,
+  "n_cells_removed_zero_counts": 3,
+  "n_genes_after_spagcn_filter": 3,
+  "num_pcs": 2,
+  "domains": 2,
+  "domain_column": "domain",
+  "l": 4.587590942382812,
+  "p": 0.5,
+  "resolution": 0.4,
+  "max_epochs": 200,
+  "seed": 100,
+  "histology": {
+    "histology_requested": "auto",
+    "histology_used": false,
+    "image_path": "/home/yarro/Projects/some/bioinformatics/data/tiny_mouse_ileum_nucexp_v3/morphology_focus/morphology_focus_0000.ome.tif",
+    "reason": "cv2 import failed: ModuleNotFoundError: No module named 'cv2'",
+    "pixel_orientation": null
+  },
+  "adjacency_stats": {
+    "n": 20,
+    "min_positive": 6.138450622558594,
+    "median_positive": 487.34814453125,
+    "p90_positive": 512.5816040039062,
+    "max": 531.2861328125
+  },
+  "runtime_sec": 33.258494074005284,
+  "adjacency_runtime_sec": 0.002215530999819748,
+  "train_runtime_sec": 20.93158506299369,
+  "outputs": {
+    "domains": "domains.csv",
+    "probabilities": "probabilities.csv",
+    "edges": "edges.csv",
+    "predictions": "predictions_spagcn_adjacency_k12.csv",
+    "bench_xy": "bench_xy.csv",
+    "domains_summary": "domains_summary.csv",
+    "domains_figure": "domains.png",
+    "confidence_figure": "confidence.png",
+    "domain_sizes_figure": "domain_sizes.png"
+  },
+  "environment": {
+    "python": "3.14.5 (main, May 10 2026, 18:26:20) [GCC 16.1.1 20260430]",
+    "executable": "/home/yarro/Projects/some/biolab/.venv/bin/python",
+    "pid": 171459,
+    "spagcn_version": "1.2.7"
+  }
+}

@@ -1,21 +1,25 @@
 {
   "measurement": "learned_mix",
-  "label": "learned_expression1_morphology0_morphology_image0.5_seq_jaccard1_seq_jaccard_all0.125_seq_blast0.5",
+  "mix_mode": "neighbor_union_v1",
+  "label": "learned_expression1_morphology0_morphology_image0_seq_jaccard_all0.125",
+  "k": 0,
   "weights": {
     "expression": 1.0,
     "morphology": 0.0,
-    "morphology_image": 0.5,
-    "seq_jaccard": 1.0,
-    "seq_jaccard_all": 0.125,
-    "seq_blast": 0.5
+    "morphology_image": 0.0,
+    "seq_jaccard_all": 0.125
+  },
+  "base_k_by_measurement": {
+    "expression": 1,
+    "morphology": 8,
+    "morphology_image": 32,
+    "seq_jaccard_all": 5
   },
   "base_measurements": [
     "expression",
     "morphology",
     "morphology_image",
-    "seq_jaccard",
-    "seq_jaccard_all",
-    "seq_blast"
+    "seq_jaccard_all"
   ],
   "weight_values": [
     0.0,
@@ -25,5 +29,6 @@
     2.0
   ],
   "min_coverage": 0.95,
-  "p90_weight": 0.5
+  "p90_weight": 0.5,
+  "neighbor_weight_formula": "measurement_weight * (1 / rank) * (1 / (1 + normalized_distance))"
 }

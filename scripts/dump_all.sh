@@ -68,18 +68,13 @@ spagcn_needs_run() {
   [[ ! -s "$out_dir/baselines/spagcn/bench_xy.csv" ]] && return 0
 
   newer_than_stamp "$dataset_id" "$stamp" \
-    scripts/spagcn_baseline.sh \
     xenum/baselines \
     xenum_paths.py
 }
 
 run_spagcn_baseline() {
   local dataset_id="$1"
-
-  if [[ "${XENUM_SKIP_SPAGCN:-0}" == "1" ]]; then
-    echo "=== baseline spagcn $dataset_id skipped ==="
-    return
-  fi
+  local python_bin="${XENUM_SPAGCN_PYTHON:-python}"
 
   if ! spagcn_needs_run "$dataset_id"; then
     echo "=== baseline spagcn $dataset_id is current ==="
@@ -87,13 +82,7 @@ run_spagcn_baseline() {
   fi
 
   echo "=== baseline spagcn $dataset_id ==="
-
-  if [[ "${XENUM_SPAGCN_REQUIRED:-0}" == "1" ]]; then
-    bash scripts/spagcn_baseline.sh "$dataset_id"
-  else
-    bash scripts/spagcn_baseline.sh "$dataset_id" \
-      || echo "spagcn baseline unavailable for $dataset_id; see outputs/$dataset_id/baselines/spagcn/summary.json" >&2
-  fi
+  "$python_bin" -m xenum.baselines.spagcn "$dataset_id"
 }
 
 for dataset_id in $(dataset_ids); do

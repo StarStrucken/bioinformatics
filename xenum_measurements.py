@@ -151,15 +151,6 @@ MEASUREMENTS = {
     #       xenum_distances.py:45-48
     # "seq_local": {"label": "seq_local", "blocks": {}},
 
-    # Sequence-like top-gene baseline: top 32 nonzero genes per adata.X row,
-    # compared with a BLAST-like word/local-alignment hybrid.
-    # Distance: 0.35 * word-set distance + 0.65 * local-alignment distance.
-    # Refs: xenum/dump/config.py:34, xenum/dump/features.py:22-42
-    #       xenum/dump/graph.py:27-41, xenum_common.py:108-129
-    "seq_blast": {
-        "label": "seq_blast_top32",
-        "blocks": {},
-    },
 }
 
 VISIBLE_MEASUREMENTS = [
@@ -190,7 +181,6 @@ DEPRECATED_MEASUREMENTS = {
     "seq_jaccard",
     "seq_jaccard_all",
     "seq_local",
-    "seq_blast",
 }
 
 LEAKY_MEASUREMENTS = {
