@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
+from matplotlib.patches import Patch
 
 from xenum_paths import existing_out_dir
 
@@ -22,14 +23,8 @@ BENCHMARK_FIGSIZE = (10, 5)
 PNG_METADATA = {
     "Software": "xenum",
 }
-BASELINE_COLORS = {
-    "core": "#4C78A8",
-    "baseline": "#F58518",
-}
-NAMED_BASELINE_COLORS = {
-    "spagcn": "#F58518",
-    "luna": "#54A24B",
-}
+MEASUREMENT_COLOR = "#4C78A8"
+MEAN_MARKER_COLOR = "#111111"
 REPORT_EXAMPLE_MEASUREMENTS = (
     "morphology_image",
     "morphology_image_summary",
@@ -115,25 +110,6 @@ def add_report_examples(out_dir: Path, best_df: pd.DataFrame):
 
     return pd.concat([best_df, pd.DataFrame(rows)], ignore_index=True, sort=False)
 
-def row_source(row):
-    source = getattr(row, "source", None)
-
-    if source is None or pd.isna(source):
-        return "core"
-
-    return str(source)
-
-def row_bar_color(row):
-    if row_source(row) != "baseline":
-        return BASELINE_COLORS["core"]
-    baseline = getattr(row, "baseline", None)
-    if baseline is not None and not pd.isna(baseline):
-        color = NAMED_BASELINE_COLORS.get(str(baseline))
-        if color:
-            return color
-    return BASELINE_COLORS["baseline"]
-
-
 def row_label(row):
     label = getattr(row, "report_label", None)
 
@@ -141,12 +117,18 @@ def row_label(row):
         return str(label)
 
     measurement = str(row.measurement)
+    seed = getattr(row, "seed", None)
 
-    baseline = getattr(row, "baseline", None)
-    if baseline is not None and not pd.isna(baseline) and str(baseline):
-        return f"{baseline}:{measurement}"
+    if seed is not None and not pd.isna(seed):
+        return f"{measurement} seed={int(seed)}"
 
     return measurement
+
+def bool_values(series):
+    if series.dtype == object:
+        return series.fillna(False).astype(str).str.lower().isin({"true", "1", "yes"}).to_numpy(dtype=bool)
+
+    return series.fillna(False).astype(bool).to_numpy(dtype=bool)
 
 def prediction_path_for_row(out_dir: Path, row):
     path = getattr(row, "prediction_path", None)
@@ -154,66 +136,16 @@ def prediction_path_for_row(out_dir: Path, row):
     if path is not None and not pd.isna(path) and str(path):
         return Path(path)
 
-    return out_dir / f"predictions_{row.measurement}_k{int(row.k)}.csv"
+    measurement = str(row.measurement)
+    k = int(row.k)
+    seed = getattr(row, "seed", None)
 
-def baseline_prediction_path(baseline_dir: Path, measurement: str, k: int):
-    return baseline_dir / f"predictions_{measurement}_k{int(k)}.csv"
+    if seed is not None and not pd.isna(seed):
+        seeded = out_dir / f"predictions_{measurement}_seed{int(seed)}_k{k}.csv"
+        if seeded.exists():
+            return seeded
 
-def read_baseline_rows(out_dir: Path):
-    rows = []
-
-    for path in sorted((out_dir / "baselines").glob("*/bench_xy.csv")):
-        baseline = path.parent.name
-        bench = pd.read_csv(path)
-
-        if bench.empty:
-            continue
-
-        for row in bench.to_dict("records"):
-            measurement = str(row.get("measurement", baseline))
-            k = int(row.get("k", 0))
-            pred_path = baseline_prediction_path(path.parent, measurement, k)
-
-            row["source"] = "baseline"
-            row["baseline"] = str(row.get("baseline") or baseline)
-            row["report_label"] = f"{row['baseline']}:{measurement}"
-            row["prediction_path"] = str(pred_path)
-            row["figure_name"] = f"prediction_{row['baseline']}_{measurement}.png"
-
-            rows.append(row)
-
-    if not rows:
-        return pd.DataFrame()
-
-    return pd.DataFrame(rows)
-
-def add_baseline_rows(out_dir: Path, best_df: pd.DataFrame):
-    baseline_df = read_baseline_rows(out_dir)
-
-    if baseline_df.empty:
-        return best_df
-
-    core = best_df.copy()
-
-    if "source" not in core.columns:
-        core["source"] = "core"
-
-    if "baseline" not in core.columns:
-        core["baseline"] = ""
-
-    if "report_label" not in core.columns:
-        core["report_label"] = core["measurement"].astype(str)
-    else:
-        core["report_label"] = core["report_label"].fillna("")
-        core.loc[core["report_label"].astype(str).eq(""), "report_label"] = core["measurement"].astype(str)
-
-    if "prediction_path" not in core.columns:
-        core["prediction_path"] = ""
-
-    if "figure_name" not in core.columns:
-        core["figure_name"] = ""
-
-    return pd.concat([core, baseline_df], ignore_index=True, sort=False)
+    return out_dir / f"predictions_{measurement}_k{k}.csv"
 
 def sample_indices(n, max_n, seed=0):
     if n <= max_n:
@@ -334,7 +266,7 @@ def render_benchmark_best(
     best_df: pd.DataFrame,
     *,
     filename="benchmark_best_k.png",
-    title="Best measurement/baseline: median with p90 whisker",
+    title="Best measurement: median with p90 whisker and mean marker",
 ):
     if best_df.empty:
         return None
@@ -349,10 +281,17 @@ def render_benchmark_best(
 
     labels = [f"{row_label(r)}\nk={int(r.k)}" for r in df.itertuples(index=False)]
     vals = df["median_xy_error"].to_numpy(dtype=float)
-    colors = [row_bar_color(r) for r in df.itertuples(index=False)]
+    leaky = bool_values(df["leaky"]) if "leaky" in df.columns else np.zeros(len(df), dtype=bool)
 
     fig, ax = plt.subplots(figsize=BENCHMARK_FIGSIZE)
-    ax.bar(np.arange(len(df)), vals, color=colors)
+    bars = ax.bar(np.arange(len(df)), vals, color=MEASUREMENT_COLOR)
+
+    for is_leaky, bar in zip(leaky, bars):
+        if is_leaky:
+            bar.set_hatch("//")
+            bar.set_edgecolor("#222222")
+            bar.set_linewidth(0.8)
+
     ax.set_xticks(np.arange(len(df)))
     ax.set_xticklabels(labels, rotation=35, ha="right")
     ax.set_ylabel("xy error")
@@ -372,6 +311,26 @@ def render_benchmark_best(
             capsize=2,
         )
 
+    if "mean_xy_error" in df.columns:
+        mean = df["mean_xy_error"].to_numpy(dtype=float)
+        ax.scatter(
+            np.arange(len(df)),
+            mean,
+            marker="D",
+            s=20,
+            color=MEAN_MARKER_COLOR,
+            label="mean",
+            zorder=3,
+        )
+
+    handles = []
+    if "mean_xy_error" in df.columns:
+        handles.append(plt.Line2D([0], [0], marker="D", color="none", markerfacecolor=MEAN_MARKER_COLOR, markeredgecolor=MEAN_MARKER_COLOR, markersize=5, label="mean"))
+    if leaky.any():
+        handles.append(Patch(facecolor=MEASUREMENT_COLOR, edgecolor="#222222", hatch="//", label="leaky"))
+    if handles:
+        ax.legend(handles=handles, loc="best")
+
     out_path = figure_dir / filename
     fig.tight_layout()
     fig.savefig(out_path, dpi=FIG_DPI, metadata=PNG_METADATA)
@@ -382,12 +341,13 @@ def render_benchmark_best(
 
 def write_report_overview(table_dir: Path, best_df: pd.DataFrame):
     cols = [
-        "source",
-        "baseline",
-        "report_label",
         "measurement",
         "k",
+        "seed",
+        "status",
+        "status_reason",
         "leaky",
+        "mean_xy_error",
         "median_xy_error",
         "p90_xy_error",
         "coverage",
@@ -411,6 +371,7 @@ def write_report_overview(table_dir: Path, best_df: pd.DataFrame):
     out_path = table_dir / "report_overview.csv"
     round_cols = [
         "median_xy_error",
+        "mean_xy_error",
         "p90_xy_error",
         "coverage",
         "pred_spread_ratio",
@@ -457,7 +418,6 @@ def main():
 
     best_df = read_best_k(out_dir, table_dir)
     best_df = add_report_examples(out_dir, best_df)
-    best_df = add_baseline_rows(out_dir, best_df)
     write_report_overview(table_dir, best_df)
 
     rendered = []
@@ -489,28 +449,6 @@ def main():
     bench_path = render_benchmark_best(table_dir, figure_dir, best_df)
     if bench_path is not None:
         rendered.append(bench_path)
-
-    comparison = best_df.copy()
-    if not comparison.empty:
-        if "leaky" in comparison.columns:
-            leaky = comparison["leaky"].fillna(False).astype(str).str.lower().isin({"true", "1", "yes"})
-        else:
-            leaky = pd.Series(False, index=comparison.index)
-
-        source = comparison["source"].fillna("core").astype(str) if "source" in comparison.columns else pd.Series("core", index=comparison.index)
-        baseline = comparison["baseline"].fillna("").astype(str) if "baseline" in comparison.columns else pd.Series("", index=comparison.index)
-        keep = (~leaky) | (source.eq("baseline") & baseline.eq("spagcn"))
-        comparison = comparison[keep].copy()
-
-    comparison_path = render_benchmark_best(
-        table_dir,
-        figure_dir,
-        comparison,
-        filename="benchmark_spagcn_vs_core.png",
-        title="External baselines vs best non-leaky methods: median with p90 whisker",
-    )
-    if comparison_path is not None:
-        rendered.append(comparison_path)
 
     print(f"figures rendered: {len(rendered)}", flush=True)
     print(f"figures dir: {figure_dir}", flush=True)

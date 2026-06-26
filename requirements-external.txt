@@ -1,10 +1,10 @@
-# External/optional pipeline dependencies.
+# Optional library dependencies used by pipeline measurements.
 # Squidpy is used by xenum.image.run_morphology.
 squidpy
 spatialdata
 spatialdata-io
 
-# SpaGCN is used only through the optional external baseline adapter.
+# SpaGCN is used by the spagcn_* measurements.
 SpaGCN==1.2.7
 torch
 python-igraph

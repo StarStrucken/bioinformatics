@@ -20,7 +20,18 @@ def learned_mix_default_workers():
 
 K = 4
 BENCH_K_VALUES = (1, 2, 3, 4, 5, 8, 12, 16, 24, 32)
+RANDOM_SEEDS = tuple(range(20))
 EXPRESSION_PCS = 30
+SPAGCN_SEED = int_env("XENUM_SPAGCN_SEED", 100)
+SPAGCN_NUM_PCS = int_env("XENUM_SPAGCN_NUM_PCS", 50)
+SPAGCN_MIN_CELLS = int_env("XENUM_SPAGCN_MIN_CELLS", 3)
+SPAGCN_MAX_EPOCHS = int_env("XENUM_SPAGCN_MAX_EPOCHS", 200)
+SPAGCN_P = float(os.environ.get("XENUM_SPAGCN_P", "0.5"))
+SPAGCN_RESOLUTION = float(os.environ.get("XENUM_SPAGCN_RESOLUTION", "0.4"))
+SPAGCN_LR = float(os.environ.get("XENUM_SPAGCN_LR", "0.005"))
+SPAGCN_TOL = float(os.environ.get("XENUM_SPAGCN_TOL", "0.005"))
+SPAGCN_ALPHA = float(os.environ.get("XENUM_SPAGCN_ALPHA", "1.0"))
+SPAGCN_BETA = int_env("XENUM_SPAGCN_BETA", 49)
 LEARNED_MIX_NAME = "learned_mix"
 LEARNED_MIX_MODE = "neighbor_union_v1"
 LEARNED_MIX_OUTPUT_K = 0

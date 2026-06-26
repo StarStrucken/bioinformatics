@@ -11,6 +11,23 @@ if [[ "$#" -ne 0 ]]; then
 fi
 
 mkdir -p outputs
+CURRENT_DATASET=""
+
+rebuild_global_outputs() {
+  python -m xenum.cli.bench_all_xy || true
+}
+
+mark_interrupted() {
+  if [[ -n "$CURRENT_DATASET" ]]; then
+    mkdir -p "outputs/$CURRENT_DATASET"
+    printf '{"dataset":"%s","status":"interrupted"}\n' "$CURRENT_DATASET" > "outputs/$CURRENT_DATASET/pipeline_status.json"
+  fi
+
+  rebuild_global_outputs
+  exit 130
+}
+
+trap mark_interrupted INT TERM
 
 dump_needs_clean() {
   local dataset_id="$1"
@@ -58,47 +75,8 @@ reset_report_outputs() {
   fi
 }
 
-spagcn_needs_run() {
-  local dataset_id="$1"
-  local out_dir="outputs/$dataset_id"
-  local stamp="$out_dir/baselines/spagcn/summary.json"
-
-  [[ "${XENUM_SPAGCN_FORCE:-0}" == "1" ]] && return 0
-  [[ ! -s "$stamp" ]] && return 0
-  [[ ! -s "$out_dir/baselines/spagcn/bench_xy.csv" ]] && return 0
-
-  newer_than_stamp "$dataset_id" "$stamp" \
-    xenum/baselines \
-    xenum_paths.py
-}
-
-run_spagcn_baseline() {
-  local dataset_id="$1"
-  local python_bin="${XENUM_SPAGCN_PYTHON:-python}"
-
-  if ! spagcn_needs_run "$dataset_id"; then
-    echo "=== baseline spagcn $dataset_id is current ==="
-    return
-  fi
-
-  echo "=== baseline spagcn $dataset_id ==="
-  "$python_bin" -m xenum.baselines.spagcn "$dataset_id"
-}
-
-
-run_luna_baseline() {
-  local dataset_id="$1"
-
-  if [[ "${XENUM_SKIP_LUNA:-0}" == "1" ]]; then
-    echo "=== baseline luna $dataset_id skipped ==="
-    return
-  fi
-
-  echo "=== baseline luna $dataset_id ==="
-  python -m xenum.baselines.luna "$dataset_id"
-}
-
 for dataset_id in $(dataset_ids); do
+  CURRENT_DATASET="$dataset_id"
   precalc_dataset "$dataset_id"
 
   echo "=== dump learned=True $dataset_id ==="
@@ -109,9 +87,9 @@ for dataset_id in $(dataset_ids); do
 
   reset_report_outputs "$dataset_id"
   python -m xenum.dump.cli "$dataset_id"
-  run_spagcn_baseline "$dataset_id"
-  run_luna_baseline "$dataset_id"
   python -m xenum.reports.render "$dataset_id"
+  CURRENT_DATASET=""
+  rebuild_global_outputs
 done
 
-python -m xenum.cli.bench_all_xy
+rebuild_global_outputs

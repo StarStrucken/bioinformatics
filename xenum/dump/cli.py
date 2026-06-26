@@ -5,15 +5,17 @@ import json
 
 import pandas as pd
 
-from xenum_measurements import ACTIVE_MEASUREMENTS, HIDDEN_MEASUREMENTS, MEASUREMENTS, OPTIONAL_MEASUREMENTS, VISIBLE_MEASUREMENTS
+from xenum_measurements import ACTIVE_MEASUREMENTS, CONTROL_MEASUREMENTS, HIDDEN_MEASUREMENTS, MEASUREMENTS, OPTIONAL_MEASUREMENTS, SPAGCN_MEASUREMENTS, VISIBLE_MEASUREMENTS
 from xenum_paths import data_dir, out_dir as make_out_dir
 
-from .benchmarks import add_spatial_reference, best_k_by_measurement, run_learned_mix, summarize_benchmarks
+from .benchmarks import add_spatial_reference, best_k_by_measurement, normalize_benchmark_rows, run_learned_mix, summarize_benchmarks
 from .config import BENCH_K_VALUES, CUTOFF_MAD, CUTOFF_QUANTILE, DIAGNOSTICS_DIR, EDGE_COLS, EXPRESSION_PCS, K, LEARNED_BASE_MEASUREMENTS, LEARNED_MIN_COVERAGE, LEARNED_MIX_MODE, LEARNED_MIX_NAME, LEARNED_MIX_OUTPUT_K, LEARNED_WEIGHT_VALUES, MIN_EDGES_PER_NODE, NODE_BASE_COLS, REPORT_DIR, RUN_LEARNED_MIX, TOP_GENES_PER_CELL, USE_NEIGHBOR_CUTOFF, tqdm
 from .features import available_measurements, build_blocks, detected_gene_ids, load_morphology_image_blocks, make_nodes, measurement_available, top_gene_ids
 from .graph import checks, edges_from_neighbor_lists, load_or_make_pairs, neighbor_lists_from_pairs, prediction_from_edges
 from .io import load_xenium, make_output_sections, mirror_outputs
 from .npz import write_npz
+from .random_controls import run_random_controls
+from .spagcn import run_spagcn_measurements
 
 def parse_k_list(s):
     vals = []
@@ -112,6 +114,28 @@ def main():
         else:
             print(f"{m}: bench done", flush=True)
 
+    random_rows, random_summaries = run_random_controls(
+        out_dir,
+        args.dataset_id,
+        nodes[node_cols],
+        blocks,
+        bench_k_values,
+    )
+    bench_rows.extend(random_rows)
+    summaries.update(random_summaries)
+
+    spagcn_rows, spagcn_summaries = run_spagcn_measurements(
+        out_dir,
+        args.dataset_id,
+        adata,
+        nodes[node_cols],
+        node_cols,
+        blocks,
+        bench_k_values,
+    )
+    bench_rows.extend(spagcn_rows)
+    summaries.update(spagcn_summaries)
+
     learned_base_measurements = [
         m for m in LEARNED_BASE_MEASUREMENTS
         if measurement_available(m, blocks)
@@ -146,7 +170,7 @@ def main():
     bench_rows.extend(learned_rows)
     summaries.update(learned_summaries)
 
-    bench_df = pd.DataFrame(bench_rows).sort_values(["leaky", "measurement", "k"])
+    bench_df = normalize_benchmark_rows(pd.DataFrame(bench_rows)).sort_values(["leaky", "measurement", "k", "seed"], na_position="last")
     bench_df = add_spatial_reference(bench_df)
 
     bench_df.to_csv(out_dir / "bench_xy.csv", index=False)
@@ -159,30 +183,40 @@ def main():
     best_k = best_k_by_measurement(bench_df)
     best_k.to_csv(out_dir / "best_k_by_measurement.csv", index=False)
 
-    best_nonleaky = (
-        bench_df[~bench_df["leaky"]]
+    best_preview = (
+        best_k
         .dropna(subset=["median_vs_spatial_best"])
         .sort_values(["median_vs_spatial_best", "median_xy_error"])
         .head(10)
     )
-    summary_measurements = list(dict.fromkeys([*measurement_names, *learned_base_measurements]))
+    summary_measurements = list(dict.fromkeys([
+        *measurement_names,
+        *CONTROL_MEASUREMENTS,
+        *SPAGCN_MEASUREMENTS,
+        *learned_base_measurements,
+    ]))
 
     print()
-    print("bench top non-leaky:", flush=True)
-    print(
-        best_nonleaky[
-            [
-                "measurement",
-                "k",
-                "n_edges",
-                "coverage",
-                "median_xy_error",
-                "median_vs_spatial_best",
-                "median_vs_spatial_same_k",
-            ]
-        ].to_string(index=False),
-        flush=True,
-    )
+    print("bench top selected:", flush=True)
+    if best_preview.empty:
+        print("(none)", flush=True)
+    else:
+        print(
+            best_preview[
+                [
+                    "measurement",
+                    "k",
+                    "seed",
+                    "leaky",
+                    "coverage",
+                    "mean_xy_error",
+                    "median_xy_error",
+                    "median_vs_spatial_best",
+                    "median_vs_spatial_same_k",
+                ]
+            ].to_string(index=False),
+            flush=True,
+        )
 
     print(f"bench saved: {out_dir / 'bench_xy.csv'}", flush=True)
     print(f"predictions saved: {out_dir}", flush=True)
@@ -211,6 +245,8 @@ def main():
         "cutoff_mad": float(CUTOFF_MAD),
         "min_edges_per_node": int(MIN_EDGES_PER_NODE),
         "measurements": measurement_names,
+        "control_measurements": list(CONTROL_MEASUREMENTS),
+        "spagcn_measurements": list(SPAGCN_MEASUREMENTS),
         "visible_measurements": list(VISIBLE_MEASUREMENTS),
         "hidden_measurements": list(HIDDEN_MEASUREMENTS),
         "active_measurements": measurement_names,
