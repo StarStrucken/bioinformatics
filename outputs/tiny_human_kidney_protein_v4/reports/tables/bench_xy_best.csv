@@ -1,2 +1,0 @@
-dataset,measurement,k,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
-tiny_human_kidney_protein_v4,learned_mix,1,10.350518226623535,72.0045166015625,0.9692737430167597,3.8261355292776367,1.6573033364718344,4,2.705214738845825

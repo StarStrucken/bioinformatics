@@ -30,6 +30,8 @@ logs/
 # Generated outputs
 outputs/*
 !outputs/bench_*.csv
+!outputs/benchmark_matrix_*.csv
+!outputs/benchmark_boxplot.png
 !outputs/*/
 outputs/*/*
 

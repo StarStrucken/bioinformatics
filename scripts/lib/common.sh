@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+XENUM_MAIN_PYTHON="${XENUM_MAIN_PYTHON:-python}"
+XENUM_DATA_DIR="${XENUM_DATA_DIR:-$REPO_ROOT/data}"
+XENUM_OUTPUT_DIR="${XENUM_OUTPUT_DIR:-$REPO_ROOT/outputs}"
+XENUM_DATASETS="${XENUM_DATASETS:-$REPO_ROOT/datasets.tsv}"
 
 dataset_ids() {
-  tail -n +2 datasets.tsv | awk -F'\t' 'NF && $1 !~ /^#/ { print $1 }'
+  tail -n +2 "$XENUM_DATASETS" | awk -F'\t' 'NF && $1 !~ /^#/ { print $1 }'
+}
+
+run_python() {
+  "$XENUM_MAIN_PYTHON" "$@"
 }
 
 newer_than_stamp() {
@@ -21,8 +29,8 @@ newer_than_stamp() {
     fi
   done
 
-  if [[ -d "data/$dataset_id" ]] \
-    && [[ -n "$(find "data/$dataset_id" -type f -newer "$stamp" -print -quit 2>/dev/null)" ]]; then
+  if [[ -d "$XENUM_DATA_DIR/$dataset_id" ]] \
+    && [[ -n "$(find "$XENUM_DATA_DIR/$dataset_id" -type f -newer "$stamp" -print -quit 2>/dev/null)" ]]; then
     return 0
   fi
 

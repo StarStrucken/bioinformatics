@@ -1,0 +1,30 @@
+diff --git a/utils/data/load.py b/utils/data/load.py
+index b434c3b..ed1f12a 100644
+--- a/utils/data/load.py
++++ b/utils/data/load.py
+@@ -1,6 +1,6 @@
+ import numpy as np
+ import pandas as pd
+-import scanpy as sc
++from anndata import AnnData
+ import torch
+ from scipy.spatial.distance import cdist
+ 
+@@ -9,7 +9,7 @@ from utils.data.dataholder import DataHolder
+ 
+ def create_anndata(
+     metadata_true: pd.DataFrame, metadata_pred: pd.DataFrame
+-) -> sc.AnnData:
++) -> AnnData:
+     """
+     Creates an AnnData object from given metadata.
+ 
+@@ -27,7 +27,7 @@ def create_anndata(
+         (metadata_pred["coord_X"].values, metadata_pred["coord_Y"].values)
+     )
+ 
+-    adata = sc.AnnData(X=pred_points)
++    adata = AnnData(X=pred_points)
+     adata.obs["cell_class"] = pd.Categorical(metadata_true["c"])
+     adata.obsm["true_points"] = true_points
+     adata.obsm["spatial"] = pred_points

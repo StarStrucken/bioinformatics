@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
+from matplotlib.patches import Patch
 
 from xenum_paths import existing_out_dir
 
@@ -22,6 +23,8 @@ BENCHMARK_FIGSIZE = (10, 5)
 PNG_METADATA = {
     "Software": "xenum",
 }
+MEASUREMENT_COLOR = "#4C78A8"
+MEAN_MARKER_COLOR = "#111111"
 REPORT_EXAMPLE_MEASUREMENTS = (
     "morphology_image",
     "morphology_image_summary",
@@ -45,6 +48,7 @@ def report_dirs(out_dir: Path):
     report_dir = out_dir / "reports"
     table_dir = report_dir / "tables"
     figure_dir = report_dir / "figures"
+    table_dir.mkdir(parents=True, exist_ok=True)
     figure_dir.mkdir(parents=True, exist_ok=True)
     return report_dir, table_dir, figure_dir
 
@@ -106,6 +110,43 @@ def add_report_examples(out_dir: Path, best_df: pd.DataFrame):
 
     return pd.concat([best_df, pd.DataFrame(rows)], ignore_index=True, sort=False)
 
+def row_label(row):
+    label = getattr(row, "report_label", None)
+
+    if label is not None and not pd.isna(label):
+        return str(label)
+
+    measurement = str(row.measurement)
+    seed = getattr(row, "seed", None)
+
+    if seed is not None and not pd.isna(seed):
+        return f"{measurement} seed={int(seed)}"
+
+    return measurement
+
+def bool_values(series):
+    if series.dtype == object:
+        return series.fillna(False).astype(str).str.lower().isin({"true", "1", "yes"}).to_numpy(dtype=bool)
+
+    return series.fillna(False).astype(bool).to_numpy(dtype=bool)
+
+def prediction_path_for_row(out_dir: Path, row):
+    path = getattr(row, "prediction_path", None)
+
+    if path is not None and not pd.isna(path) and str(path):
+        return Path(path)
+
+    measurement = str(row.measurement)
+    k = int(row.k)
+    seed = getattr(row, "seed", None)
+
+    if seed is not None and not pd.isna(seed):
+        seeded = out_dir / f"predictions_{measurement}_seed{int(seed)}_k{k}.csv"
+        if seeded.exists():
+            return seeded
+
+    return out_dir / f"predictions_{measurement}_k{k}.csv"
+
 def sample_indices(n, max_n, seed=0):
     if n <= max_n:
         return np.arange(n, dtype=int)
@@ -122,21 +163,22 @@ def finite_prediction_mask(df):
 
     return ok
 
-def prediction_title(measurement, k, df):
+def prediction_title(measurement, k, df, label=None):
     ok = finite_prediction_mask(df)
     err = df.loc[ok, "error"].to_numpy(dtype=float)
+    title = str(label or measurement)
 
     if len(err) == 0:
-        return f"{measurement} k={k}"
+        return f"{title} k={k}"
 
     median = float(np.median(err))
     p90 = float(np.quantile(err, 0.90))
     coverage = float(ok.mean())
 
-    return f"{measurement} k={k}  median={median:.2f}  p90={p90:.2f}  coverage={coverage:.3f}"
+    return f"{title} k={k}  median={median:.2f}  p90={p90:.2f}  coverage={coverage:.3f}"
 
-def render_prediction(out_dir: Path, figure_dir: Path, measurement: str, k: int, error_limits=None):
-    path = out_dir / f"predictions_{measurement}_k{k}.csv"
+def render_prediction(out_dir: Path, figure_dir: Path, measurement: str, k: int, error_limits=None, prediction_path=None, figure_name=None, label=None):
+    path = Path(prediction_path) if prediction_path else out_dir / f"predictions_{measurement}_k{k}.csv"
 
     if not path.exists():
         print(f"skip {measurement}: missing {path}", flush=True)
@@ -203,14 +245,14 @@ def render_prediction(out_dir: Path, figure_dir: Path, measurement: str, k: int,
         label="predicted",
     )
 
-    ax.set_title(prediction_title(measurement, k, df))
+    ax.set_title(prediction_title(measurement, k, df, label=label))
     ax.set_xlabel("x")
     ax.set_ylabel("y * -1")
     ax.set_aspect("equal", adjustable="box")
     ax.legend(loc="best", markerscale=3)
     fig.colorbar(sc, ax=ax, label="prediction error")
 
-    out_path = figure_dir / f"prediction_{measurement}.png"
+    out_path = figure_dir / (figure_name or f"prediction_{measurement}.png")
     fig.tight_layout()
     fig.savefig(out_path, dpi=FIG_DPI, metadata=PNG_METADATA)
     plt.close(fig)
@@ -218,7 +260,14 @@ def render_prediction(out_dir: Path, figure_dir: Path, measurement: str, k: int,
     print(f"rendered: {out_path}", flush=True)
     return out_path
 
-def render_benchmark_best(table_dir: Path, figure_dir: Path, best_df: pd.DataFrame):
+def render_benchmark_best(
+    table_dir: Path,
+    figure_dir: Path,
+    best_df: pd.DataFrame,
+    *,
+    filename="benchmark_best_k.png",
+    title="Best measurement: median with p90 whisker and mean marker",
+):
     if best_df.empty:
         return None
 
@@ -230,18 +279,23 @@ def render_benchmark_best(table_dir: Path, figure_dir: Path, best_df: pd.DataFra
 
     df = df.sort_values(["median_xy_error", "measurement"])
 
-    labels = [
-        f"{r.measurement}\nk={int(r.k)}"
-        for r in df.itertuples(index=False)
-    ]
+    labels = [f"{row_label(r)}\nk={int(r.k)}" for r in df.itertuples(index=False)]
     vals = df["median_xy_error"].to_numpy(dtype=float)
+    leaky = bool_values(df["leaky"]) if "leaky" in df.columns else np.zeros(len(df), dtype=bool)
 
     fig, ax = plt.subplots(figsize=BENCHMARK_FIGSIZE)
-    ax.bar(np.arange(len(df)), vals)
+    bars = ax.bar(np.arange(len(df)), vals, color=MEASUREMENT_COLOR)
+
+    for is_leaky, bar in zip(leaky, bars):
+        if is_leaky:
+            bar.set_hatch("//")
+            bar.set_edgecolor("#222222")
+            bar.set_linewidth(0.8)
+
     ax.set_xticks(np.arange(len(df)))
     ax.set_xticklabels(labels, rotation=35, ha="right")
     ax.set_ylabel("xy error")
-    ax.set_title("Best k by measurement: median with p90 whisker")
+    ax.set_title(title)
 
     if "p90_xy_error" in df.columns:
         p90 = df["p90_xy_error"].to_numpy(dtype=float)
@@ -257,7 +311,27 @@ def render_benchmark_best(table_dir: Path, figure_dir: Path, best_df: pd.DataFra
             capsize=2,
         )
 
-    out_path = figure_dir / "benchmark_best_k.png"
+    if "mean_xy_error" in df.columns:
+        mean = df["mean_xy_error"].to_numpy(dtype=float)
+        ax.scatter(
+            np.arange(len(df)),
+            mean,
+            marker="D",
+            s=20,
+            color=MEAN_MARKER_COLOR,
+            label="mean",
+            zorder=3,
+        )
+
+    handles = []
+    if "mean_xy_error" in df.columns:
+        handles.append(plt.Line2D([0], [0], marker="D", color="none", markerfacecolor=MEAN_MARKER_COLOR, markeredgecolor=MEAN_MARKER_COLOR, markersize=5, label="mean"))
+    if leaky.any():
+        handles.append(Patch(facecolor=MEASUREMENT_COLOR, edgecolor="#222222", hatch="//", label="leaky"))
+    if handles:
+        ax.legend(handles=handles, loc="best")
+
+    out_path = figure_dir / filename
     fig.tight_layout()
     fig.savefig(out_path, dpi=FIG_DPI, metadata=PNG_METADATA)
     plt.close(fig)
@@ -269,6 +343,11 @@ def write_report_overview(table_dir: Path, best_df: pd.DataFrame):
     cols = [
         "measurement",
         "k",
+        "seed",
+        "status",
+        "status_reason",
+        "leaky",
+        "mean_xy_error",
         "median_xy_error",
         "p90_xy_error",
         "coverage",
@@ -292,6 +371,7 @@ def write_report_overview(table_dir: Path, best_df: pd.DataFrame):
     out_path = table_dir / "report_overview.csv"
     round_cols = [
         "median_xy_error",
+        "mean_xy_error",
         "p90_xy_error",
         "coverage",
         "pred_spread_ratio",
@@ -312,7 +392,7 @@ def global_error_limits(out_dir: Path, best_df: pd.DataFrame):
     vals = []
 
     for r in best_df.itertuples(index=False):
-        path = out_dir / f"predictions_{r.measurement}_k{int(r.k)}.csv"
+        path = prediction_path_for_row(out_dir, r)
 
         if not path.exists():
             continue
@@ -348,7 +428,21 @@ def main():
         measurement = str(r.measurement)
         k = int(r.k)
 
-        path = render_prediction(out_dir, figure_dir, measurement, k, error_limits=error_limits)
+        prediction_path = prediction_path_for_row(out_dir, r)
+        figure_name = getattr(r, "figure_name", None)
+        if figure_name is not None and (pd.isna(figure_name) or not str(figure_name)):
+            figure_name = None
+
+        path = render_prediction(
+            out_dir,
+            figure_dir,
+            measurement,
+            k,
+            error_limits=error_limits,
+            prediction_path=prediction_path,
+            figure_name=figure_name,
+            label=row_label(r),
+        )
         if path is not None:
             rendered.append(path)
 

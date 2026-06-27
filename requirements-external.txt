@@ -1,0 +1,15 @@
+# Optional library dependencies used by pipeline measurements.
+# Squidpy is used by xenum.image.run_morphology.
+squidpy
+spatialdata
+spatialdata-io
+
+# SpaGCN is used by the spagcn_* measurements.
+SpaGCN==1.2.7
+torch
+python-igraph
+louvain>=0.8.0
+opencv-python
+
+# LUNA uses a dedicated Python 3.9 environment and is invoked through
+# XENUM_LUNA_PYTHON, so its older PyTorch/CUDA stack is not installed here.

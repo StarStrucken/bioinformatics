@@ -1,4 +1,0 @@
-numpy
-pandas
-PySide6
-pyqtgraph

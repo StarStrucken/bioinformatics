@@ -25,7 +25,7 @@ optional_pair_measurements=(
 
 morphology_needs_run() {
   local dataset_id="$1"
-  local out_dir="outputs/$dataset_id"
+  local out_dir="$XENUM_OUTPUT_DIR/$dataset_id"
   local stamp="$out_dir/cache/morphology_image_meta.json"
 
   [[ ! -s "$stamp" ]] && return 0
@@ -35,12 +35,12 @@ morphology_needs_run() {
     [[ -s "$out_dir/$rel" ]] || return 0
   done
 
-  newer_than_stamp "$dataset_id" "$stamp" datasets.tsv xenum/image xenum_paths.py
+  newer_than_stamp "$dataset_id" "$stamp" "$XENUM_DATASETS" xenum/image xenum_paths.py
 }
 
 precalc_needs_run() {
   local dataset_id="$1"
-  local out_dir="outputs/$dataset_id"
+  local out_dir="$XENUM_OUTPUT_DIR/$dataset_id"
   local stamp="$out_dir/cache/precompute_summary.json"
 
   [[ ! -s "$stamp" ]] && return 0
@@ -58,7 +58,7 @@ precalc_needs_run() {
     fi
   done
 
-  if newer_than_stamp "$dataset_id" "$stamp" datasets.tsv xenum/dump xenum/image xenum_common.py xenum_measurements.py xenum_paths.py; then
+  if newer_than_stamp "$dataset_id" "$stamp" "$XENUM_DATASETS" xenum/dump xenum/image xenum_common.py xenum_measurements.py xenum_paths.py; then
     return 0
   fi
 
@@ -75,13 +75,13 @@ precalc_dataset() {
   echo "=== precalc $dataset_id ==="
 
   if morphology_needs_run "$dataset_id"; then
-    python -m xenum.image.run_morphology "$dataset_id"
+    run_python -m xenum.image.run_morphology "$dataset_id"
   else
     echo "morphology image features are current"
   fi
 
   if precalc_needs_run "$dataset_id"; then
-    python -m xenum.dump.precompute "$dataset_id"
+    run_python -m xenum.dump.precompute "$dataset_id"
   else
     echo "precompute cache is current"
   fi

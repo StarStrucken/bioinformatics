@@ -1,3 +1,9 @@
 [submodule "external/squidpy_cpmeasure"]
 	path = external/squidpy_cpmeasure
 	url = https://github.com/scverse/squidpy
+[submodule "external/SpaGCN"]
+	path = external/SpaGCN
+	url = https://github.com/jianhuupenn/SpaGCN.git
+[submodule "external/LUNA"]
+	path = external/LUNA
+	url = https://github.com/StarStrucken/LUNA.git
