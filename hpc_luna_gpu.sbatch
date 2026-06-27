@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=xenum_dump
+#SBATCH --job-name=xenum_luna
 #SBATCH --account=lect0184
 #SBATCH --partition=c23g
 #SBATCH --nodes=1
@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=120G
 #SBATCH --gres=gpu:1
-#SBATCH --time=48:00:00
+#SBATCH --time=72:00:00
 #SBATCH --chdir=/work/hi202241/bioinformatics
 #SBATCH --output=/work/hi202241/bioinformatics/logs/%x-%j.out
 #SBATCH --error=/work/hi202241/bioinformatics/logs/%x-%j.err
@@ -69,7 +69,6 @@ export MALLOC_ARENA_MAX=2
 
 echo "START   $(date --iso-8601=seconds)"
 echo "JOB_ID  ${SLURM_JOB_ID:-manual}"
-echo "ACCOUNT ${SLURM_JOB_ACCOUNT:-unknown}"
 echo "HOST    $(hostname)"
 echo "PWD     $(pwd)"
 echo "MAIN    $XENUM_MAIN_PYTHON"
@@ -100,6 +99,6 @@ if not torch.cuda.is_available():
     raise SystemExit("LUNA environment cannot access CUDA")
 PY
 
-bash scripts/dump_all.sh
+bash scripts/dump_luna_all.sh
 
 echo "DONE    $(date --iso-8601=seconds)"

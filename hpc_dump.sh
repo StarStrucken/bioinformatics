@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "$#" -ne 0 ]]; then
-  echo "usage: bash hpc_dump.sh" >&2
+target="${1:-cpu}"
+
+if [[ "$#" -gt 1 ]]; then
+  echo "usage: bash hpc_dump.sh [cpu|luna|both]" >&2
   exit 2
 fi
 
@@ -10,4 +12,20 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
 mkdir -p logs
-sbatch hpc_dump_all.sbatch
+
+case "$target" in
+  cpu)
+    sbatch hpc_dump_cpu.sbatch
+    ;;
+  luna)
+    sbatch hpc_luna_gpu.sbatch
+    ;;
+  both)
+    cpu_job="$(sbatch --parsable hpc_dump_cpu.sbatch)"
+    sbatch --dependency="afterany:$cpu_job" hpc_luna_gpu.sbatch
+    ;;
+  *)
+    echo "usage: bash hpc_dump.sh [cpu|luna|both]" >&2
+    exit 2
+    ;;
+esac
