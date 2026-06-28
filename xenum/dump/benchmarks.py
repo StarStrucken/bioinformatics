@@ -16,6 +16,100 @@ from .npz import write_npz
 
 _LEARNED_CONTEXT = {}
 
+RANDOM_SELECTION_MEASUREMENTS = {
+    "random_permutation",
+    "random_neighbors",
+}
+
+BENCH_REQUIRED_COLUMNS = [
+    "dataset",
+    "measurement",
+    "k",
+    "seed",
+    "leaky",
+    "coverage",
+    "mean_xy_error",
+    "median_xy_error",
+    "p90_xy_error",
+    "status",
+]
+
+def normalize_benchmark_rows(df):
+    df = df.copy()
+
+    for col in BENCH_REQUIRED_COLUMNS:
+        if col not in df.columns:
+            if col == "seed":
+                df[col] = None
+            elif col == "status":
+                df[col] = "ok"
+            elif col == "leaky":
+                df[col] = False
+            else:
+                df[col] = np.nan
+
+    df["status"] = df["status"].fillna("ok").astype(str)
+    if df["leaky"].dtype == object:
+        df["leaky"] = df["leaky"].fillna(False).astype(str).str.lower().isin({"true", "1", "yes"})
+    else:
+        df["leaky"] = df["leaky"].fillna(False).astype(bool)
+
+    return df
+
+def benchmark_sort_columns(df):
+    df = df.copy()
+    for col in ["median_xy_error", "mean_xy_error", "p90_xy_error", "k", "seed"]:
+        if col not in df.columns:
+            df[col] = np.nan
+
+    df["_median_sort"] = df["median_xy_error"].fillna(np.inf)
+    df["_mean_sort"] = df["mean_xy_error"].fillna(np.inf)
+    df["_p90_sort"] = df["p90_xy_error"].fillna(np.inf)
+    df["_k_sort"] = pd.to_numeric(df["k"], errors="coerce").fillna(0).astype(int)
+    df["_seed_sort"] = pd.to_numeric(df["seed"], errors="coerce").fillna(np.inf)
+    return df
+
+def selected_benchmark_rows(df, min_coverage=0.95):
+    df = normalize_benchmark_rows(df)
+    ok = df[df["status"].eq("ok")].copy()
+    ok = ok.dropna(subset=["median_xy_error", "mean_xy_error", "p90_xy_error"])
+
+    if ok.empty:
+        return pd.DataFrame(columns=df.columns)
+
+    selected = []
+
+    for measurement, group in ok.groupby("measurement", sort=False):
+        group = group.copy()
+
+        if measurement not in RANDOM_SELECTION_MEASUREMENTS:
+            covered = group[group["coverage"] >= float(min_coverage)].copy()
+            if not covered.empty:
+                group = covered
+
+            if "pred_spread_ratio" in group.columns:
+                strict = group[group["pred_spread_ratio"] >= BEST_K_MIN_PRED_SPREAD_RATIO].copy()
+                if not strict.empty:
+                    group = strict
+
+            if "median_vs_spatial_best" in group.columns:
+                with_ref = group.dropna(subset=["median_vs_spatial_best"]).copy()
+                if not with_ref.empty:
+                    group = with_ref
+
+        work = benchmark_sort_columns(group)
+
+        if measurement not in RANDOM_SELECTION_MEASUREMENTS and "median_vs_spatial_best" in work.columns:
+            work["_spatial_sort"] = work["median_vs_spatial_best"].fillna(np.inf)
+            sort_cols = ["_spatial_sort", "_median_sort", "_mean_sort", "_p90_sort", "_k_sort", "_seed_sort"]
+        else:
+            sort_cols = ["_median_sort", "_mean_sort", "_p90_sort", "_k_sort", "_seed_sort"]
+
+        row = work.sort_values(sort_cols).drop(columns=[c for c in work.columns if c.startswith("_")]).head(1)
+        selected.append(row)
+
+    return pd.concat(selected, ignore_index=True, sort=False) if selected else pd.DataFrame(columns=df.columns)
+
 def add_spatial_reference(df):
     df = df.copy()
 
@@ -72,7 +166,8 @@ def add_spatial_reference(df):
     return df
 
 def summarize_benchmarks(df):
-    clean = df[~df["leaky"]].copy()
+    clean = normalize_benchmark_rows(df)
+    clean = selected_benchmark_rows(clean)
     clean = clean.dropna(subset=["median_vs_spatial_best"])
 
     if clean.empty:
@@ -85,8 +180,10 @@ def summarize_benchmarks(df):
         .groupby(["measurement", "k"])
         .agg(
             datasets=("dataset", "nunique"),
+            leaky=("leaky", "max"),
             wins=("rank", lambda x: int((x == 1).sum())),
             rank_mean=("rank", "mean"),
+            mean_xy_error_median=("mean_xy_error", "median"),
             median_xy_error_median=("median_xy_error", "median"),
             p90_xy_error_median=("p90_xy_error", "median"),
             coverage_mean=("coverage", "mean"),
@@ -110,6 +207,9 @@ def summarize_benchmarks(df):
             "dataset",
             "measurement",
             "k",
+            "seed",
+            "leaky",
+            "mean_xy_error",
             "median_xy_error",
             "p90_xy_error",
             "coverage",
@@ -123,39 +223,28 @@ def summarize_benchmarks(df):
     return summary, best
 
 def best_k_by_measurement(df, min_coverage=0.95):
-    clean = df[
-        (~df["leaky"])
-        & (df["coverage"] >= float(min_coverage))
-    ].copy()
+    best = selected_benchmark_rows(df, min_coverage=min_coverage)
 
-    if "pred_spread_ratio" in clean.columns:
-        strict = clean[clean["pred_spread_ratio"] >= BEST_K_MIN_PRED_SPREAD_RATIO].copy()
-        if not strict.empty:
-            clean = strict
-
-    clean = clean.dropna(subset=["median_vs_spatial_best", "median_xy_error"])
-
-    if clean.empty:
+    if best.empty:
         return pd.DataFrame()
 
-    best = (
-        clean
-        .sort_values(["measurement", "median_vs_spatial_best", "median_xy_error"])
-        .groupby("measurement")
-        .head(1)
-        [[
-            "measurement",
-            "k",
-            "median_xy_error",
-            "p90_xy_error",
-            "coverage",
-            "median_vs_spatial_best",
-            "median_vs_spatial_same_k",
-            "spatial_best_k",
-            "spatial_best_median_xy_error",
-        ]]
-        .reset_index(drop=True)
-    )
+    cols = [
+        "measurement",
+        "k",
+        "seed",
+        "leaky",
+        "status",
+        "mean_xy_error",
+        "median_xy_error",
+        "p90_xy_error",
+        "coverage",
+        "median_vs_spatial_best",
+        "median_vs_spatial_same_k",
+        "spatial_best_k",
+        "spatial_best_median_xy_error",
+    ]
+    cols = [c for c in cols if c in best.columns]
+    best = best[cols].reset_index(drop=True)
 
     return best
 

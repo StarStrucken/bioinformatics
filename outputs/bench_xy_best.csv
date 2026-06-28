@@ -1,6 +1,8 @@
-dataset,source,baseline,measurement,k,median_vs_center,median_xy_error,coverage
-tiny_human_kidney_protein_v4,core,,morphology_image,1,0.1456746160984039,11.317898750305176,0.9748603351955308
-tiny_human_ovary_multimodal_v4,core,,learned_mix,0,0.0848609805107116,25.28570556640625,1.0
-tiny_human_ovary_nucexp_v4,core,,learned_mix,0,0.3191455006599426,95.54888153076172,1.0
-tiny_mouse_ileum_multimodal_v3,core,,morphology_image,1,0.0330103635787963,7.829024314880371,0.9722222222222222
-tiny_mouse_ileum_nucexp_v3,core,,learned_mix,0,0.0380922742187976,9.56922721862793,1.0
+dataset,measurement,k,seed,leaky,coverage,mean_xy_error,median_xy_error,p90_xy_error
+breast_2fov_v2,spagcn_adjacency,12,100.0,True,1.0,2.997323989868164,2.339596033096313,5.777090549468994
+lung_2fov_v2,spagcn_adjacency,8,100.0,True,0.9993276180870736,2.031910896301269,1.577294111251831,3.798051357269287
+tiny_human_kidney_protein_v4,spagcn_adjacency,5,100.0,True,0.9972067039106144,3.0859975814819336,2.2175509929656982,6.347654819488525
+tiny_human_ovary_multimodal_v4,spagcn_adjacency,4,100.0,True,1.0,2.766273021697998,2.207094669342041,5.679028034210205
+tiny_human_ovary_nucexp_v4,spagcn_adjacency,5,100.0,True,1.0,2.8237414360046387,2.164010763168335,5.802292823791504
+tiny_mouse_ileum_multimodal_v3,spagcn_adjacency,2,100.0,True,1.0,4.200708866119385,3.7535269260406494,8.077692985534668
+tiny_mouse_ileum_nucexp_v3,spagcn_adjacency,2,100.0,True,1.0,5.473184108734131,5.065574169158936,8.940007209777832

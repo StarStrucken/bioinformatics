@@ -1,2 +1,0 @@
-dataset,measurement,k,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
-tiny_mouse_ileum_nucexp_v3,learned_mix,0,9.56922721862793,29.03416633605957,1.0,1.0352803065500318,,3,9.24312686920166

@@ -304,3 +304,15 @@ Proposed structure, not up to date.
 - Costa Lab
 - HPC infrastructure support
 - Project supervisors and collaborators
+
+### LUNA compatibility patch
+
+After cloning or reinitializing `external/LUNA`, apply the local compatibility patch:
+
+```bash
+git -C external/LUNA apply --check ../../luna-compat-fixes.patch
+git -C external/LUNA apply ../../luna-compat-fixes.patch
+````
+
+The patch removes the Scanpy dependency from the AnnData helper and handles
+zero-range coordinates in LUNA inference/test datasets.

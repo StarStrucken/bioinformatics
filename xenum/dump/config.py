@@ -20,7 +20,25 @@ def learned_mix_default_workers():
 
 K = 4
 BENCH_K_VALUES = (1, 2, 3, 4, 5, 8, 12, 16, 24, 32)
+RANDOM_SEEDS = tuple(range(20))
 EXPRESSION_PCS = 30
+SPAGCN_SEED = int_env("XENUM_SPAGCN_SEED", 100)
+SPAGCN_NUM_PCS = int_env("XENUM_SPAGCN_NUM_PCS", 50)
+SPAGCN_MIN_CELLS = int_env("XENUM_SPAGCN_MIN_CELLS", 3)
+SPAGCN_MAX_EPOCHS = int_env("XENUM_SPAGCN_MAX_EPOCHS", 200)
+SPAGCN_P = float(os.environ.get("XENUM_SPAGCN_P", "0.5"))
+SPAGCN_RESOLUTION = float(os.environ.get("XENUM_SPAGCN_RESOLUTION", "0.4"))
+SPAGCN_LR = float(os.environ.get("XENUM_SPAGCN_LR", "0.005"))
+SPAGCN_TOL = float(os.environ.get("XENUM_SPAGCN_TOL", "0.005"))
+SPAGCN_ALPHA = float(os.environ.get("XENUM_SPAGCN_ALPHA", "1.0"))
+SPAGCN_BETA = int_env("XENUM_SPAGCN_BETA", 49)
+LUNA_PYTHON = os.environ.get("XENUM_LUNA_PYTHON", "").strip()
+LUNA_SEED = int_env("XENUM_LUNA_SEED", 0)
+LUNA_EPOCHS = int_env("XENUM_LUNA_EPOCHS", 1)
+LUNA_BATCH_SIZE = int_env("XENUM_LUNA_BATCH_SIZE", 1)
+LUNA_GPUS_PER_NODE = int(os.environ.get("XENUM_LUNA_GPUS_PER_NODE", "1"))
+LUNA_TIMEOUT_SEC = int(os.environ.get("XENUM_LUNA_TIMEOUT_SEC", "0") or "0")
+LUNA_ALLOW_REFLECTION = os.environ.get("XENUM_LUNA_ALLOW_REFLECTION", "1").strip().lower() not in {"0", "false", "no"}
 LEARNED_MIX_NAME = "learned_mix"
 LEARNED_MIX_MODE = "neighbor_union_v1"
 LEARNED_MIX_OUTPUT_K = 0

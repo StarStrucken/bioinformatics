@@ -1,9 +1,10 @@
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-DATA_ROOT = ROOT / "data"
-OUTPUT_ROOT = ROOT / "outputs"
-DATASETS = ROOT / "datasets.tsv"
+DATA_ROOT = Path(os.environ.get("XENUM_DATA_DIR", ROOT / "data")).expanduser()
+OUTPUT_ROOT = Path(os.environ.get("XENUM_OUTPUT_DIR", ROOT / "outputs")).expanduser()
+DATASETS = Path(os.environ.get("XENUM_DATASETS", ROOT / "datasets.tsv")).expanduser()
 
 def data_dir(dataset_id):
     return DATA_ROOT / str(dataset_id)

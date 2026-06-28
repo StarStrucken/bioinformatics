@@ -91,6 +91,7 @@ def clean_empty_dirs(out_dir):
 def main():
     args = parse_args()
     out_dir = existing_out_dir(args.dataset_id)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"cleaning: {out_dir}")
     print(f"keeping dirs: {', '.join(sorted(KEEP_DIRS))}")

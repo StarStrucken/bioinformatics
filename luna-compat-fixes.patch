@@ -1,0 +1,61 @@
+From cefdaf58e55a3766c24d61f7c01f0de4577fb9b8 Mon Sep 17 00:00:00 2001
+From: hi202241 <hi202241@login23-g-1.hpc.itc.rwth-aachen.de>
+Date: Sat, 27 Jun 2026 11:18:19 +0200
+Subject: [PATCH] Fix AnnData import and zero-range coordinate normalization
+
+---
+ utils/data/load.py | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/utils/data/load.py b/utils/data/load.py
+index b434c3b..e06f896 100644
+--- a/utils/data/load.py
++++ b/utils/data/load.py
+@@ -1,6 +1,6 @@
+ import numpy as np
+ import pandas as pd
+-import scanpy as sc
++from anndata import AnnData
+ import torch
+ from scipy.spatial.distance import cdist
+ 
+@@ -9,7 +9,7 @@ from utils.data.dataholder import DataHolder
+ 
+ def create_anndata(
+     metadata_true: pd.DataFrame, metadata_pred: pd.DataFrame
+-) -> sc.AnnData:
++) -> AnnData:
+     """
+     Creates an AnnData object from given metadata.
+ 
+@@ -27,7 +27,7 @@ def create_anndata(
+         (metadata_pred["coord_X"].values, metadata_pred["coord_Y"].values)
+     )
+ 
+-    adata = sc.AnnData(X=pred_points)
++    adata = AnnData(X=pred_points)
+     adata.obs["cell_class"] = pd.Categorical(metadata_true["c"])
+     adata.obsm["true_points"] = true_points
+     adata.obsm["spatial"] = pred_points
+@@ -154,9 +154,17 @@ def position_normalize(input_data: pd.DataFrame) -> pd.DataFrame:
+         if "cell_section" in input_data.columns:
+             groups = input_data.groupby("cell_section")[key]
+             min_, max_ = groups.transform("min"), groups.transform("max")
++            span = max_ - min_
++            normalized = (input_data[key] - min_) / span - 0.5
++            input_data[key] = normalized.where(span != 0, 0.0)
+         else:
+             min_, max_ = input_data[key].min(), input_data[key].max()
+-        input_data[key] = (input_data[key] - min_) / (max_ - min_) - 0.5
++            if max_ == min_:
++                input_data[key] = 0.0
++            else:
++                input_data[key] = (
++                    (input_data[key] - min_) / (max_ - min_) - 0.5
++                )
+     return input_data
+ 
+ 
+-- 
+2.47.3
+

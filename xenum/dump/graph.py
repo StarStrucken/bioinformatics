@@ -201,7 +201,75 @@ def checks(nodes, graph_nodes, edges, measurement):
         "pruned_directed_edges": edges.attrs.get("pruned_directed_edges"),
     }
 
-def prediction_from_edges(dataset_id, nodes, edges, measurement, k, weight_col=None, directed=False):
+def prediction_metrics(dataset_id, nodes, pred, used_neighbors, measurement, k, seed=None, status="ok", n_edges=0):
+    xy = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
+    n = len(nodes)
+
+    pred = np.asarray(pred, dtype=np.float32)
+    used_neighbors = np.asarray(used_neighbors, dtype=np.int64)
+    ok = np.isfinite(pred).all(axis=1)
+
+    dx = pred[:, 0] - xy[:, 0]
+    dy = pred[:, 1] - xy[:, 1]
+    err = np.sqrt(dx * dx + dy * dy)
+
+    center = xy.mean(axis=0) if n else np.zeros(2, dtype=np.float32)
+    center_err = np.sqrt(((xy - center) ** 2).sum(axis=1))
+    ok_err = err[ok]
+
+    real_spread = float(np.sqrt(np.var(xy[:, 0]) + np.var(xy[:, 1]))) if n else 0.0
+
+    if ok.any():
+        pred_ok = pred[ok]
+        pred_spread = float(np.sqrt(np.nanvar(pred_ok[:, 0]) + np.nanvar(pred_ok[:, 1])))
+    else:
+        pred_spread = 0.0
+
+    pred_spread_ratio = pred_spread / real_spread if real_spread > 0 else None
+
+    row = {
+        "dataset": dataset_id,
+        "measurement": measurement,
+        "label": MEASUREMENTS[measurement]["label"],
+        "k": int(k),
+        "seed": None if seed is None else int(seed),
+        "status": status,
+        "leaky": measurement in LEAKY_MEASUREMENTS,
+        "n_nodes": int(n),
+        "n_edges": int(n_edges),
+        "coverage": float(ok.mean()) if n else 0.0,
+        "real_spread": real_spread,
+        "pred_spread": pred_spread,
+        "pred_spread_ratio": pred_spread_ratio,
+        "mean_xy_error": float(ok_err.mean()) if len(ok_err) else None,
+        "median_xy_error": float(np.median(ok_err)) if len(ok_err) else None,
+        "p90_xy_error": float(np.quantile(ok_err, 0.90)) if len(ok_err) else None,
+        "center_median_error": float(np.median(center_err)) if len(center_err) else None,
+        "median_vs_center": float(np.median(ok_err) / np.median(center_err)) if len(ok_err) and np.median(center_err) > 0 else None,
+    }
+
+    pred_data = {
+        "node": np.arange(n, dtype=np.int64),
+        "cell_id": nodes["cell_id"].to_numpy(dtype=str),
+        "x": xy[:, 0],
+        "y": xy[:, 1],
+        "pred_x": pred[:, 0],
+        "pred_y": pred[:, 1],
+        "dx": dx,
+        "dy": dy,
+        "error": err,
+        "used_neighbors": used_neighbors,
+        "measurement": measurement,
+        "k": int(k),
+        "seed": None if seed is None else int(seed),
+        "status": status,
+    }
+
+    pred_df = pd.DataFrame(pred_data)
+
+    return pred_df, row
+
+def prediction_from_edges(dataset_id, nodes, edges, measurement, k, weight_col=None, directed=False, seed=None, status="ok"):
     xy = nodes[["x_centroid", "y_centroid"]].to_numpy(dtype=np.float32)
     n = len(nodes)
 
@@ -234,61 +302,33 @@ def prediction_from_edges(dataset_id, nodes, edges, measurement, k, weight_col=N
     pred[ok, 0] = sx[ok] / sw[ok]
     pred[ok, 1] = sy[ok] / sw[ok]
 
-    dx = pred[:, 0] - xy[:, 0]
-    dy = pred[:, 1] - xy[:, 1]
-    err = np.sqrt(dx * dx + dy * dy)
-
-    center = xy.mean(axis=0)
-    center_err = np.sqrt(((xy - center) ** 2).sum(axis=1))
-    ok_err = err[ok]
-
-    real_spread = float(np.sqrt(np.var(xy[:, 0]) + np.var(xy[:, 1]))) if n else 0.0
-
-    if ok.any():
-        pred_ok = pred[ok]
-        pred_spread = float(np.sqrt(np.nanvar(pred_ok[:, 0]) + np.nanvar(pred_ok[:, 1])))
-    else:
-        pred_spread = 0.0
-
-    pred_spread_ratio = pred_spread / real_spread if real_spread > 0 else None
-
-    row = {
-        "dataset": dataset_id,
-        "measurement": measurement,
-        "label": MEASUREMENTS[measurement]["label"],
-        "k": int(k),
-        "leaky": measurement in LEAKY_MEASUREMENTS,
-        "n_nodes": int(n),
-        "n_edges": int(len(edges)),
-        "coverage": float(ok.mean()) if n else 0.0,
-        "real_spread": real_spread,
-        "pred_spread": pred_spread,
-        "pred_spread_ratio": pred_spread_ratio,
-        "mean_xy_error": float(ok_err.mean()) if len(ok_err) else None,
-        "median_xy_error": float(np.median(ok_err)) if len(ok_err) else None,
-        "p90_xy_error": float(np.quantile(ok_err, 0.90)) if len(ok_err) else None,
-        "center_median_error": float(np.median(center_err)) if len(center_err) else None,
-        "median_vs_center": float(np.median(ok_err) / np.median(center_err)) if len(ok_err) and np.median(center_err) > 0 else None,
-    }
-
-    pred_data = {
-        "node": np.arange(n, dtype=np.int64),
-        "cell_id": nodes["cell_id"].to_numpy(dtype=str),
-        "x": xy[:, 0],
-        "y": xy[:, 1],
-        "pred_x": pred[:, 0],
-        "pred_y": pred[:, 1],
-        "dx": dx,
-        "dy": dy,
-        "error": err,
-        "used_neighbors": cnt,
-        "measurement": measurement,
-        "k": int(k),
-    }
+    pred_df, row = prediction_metrics(
+        dataset_id,
+        nodes,
+        pred,
+        cnt,
+        measurement,
+        k,
+        seed=seed,
+        status=status,
+        n_edges=len(edges),
+    )
 
     if weight_col:
-        pred_data["neighbor_weight_sum"] = sw
-
-    pred_df = pd.DataFrame(pred_data)
+        pred_df["neighbor_weight_sum"] = sw
 
     return pred_df, row
+
+def prediction_from_direct_coordinates(dataset_id, nodes, pred, measurement, seed=None, status="ok"):
+    used = np.zeros(len(nodes), dtype=np.int64)
+    return prediction_metrics(
+        dataset_id,
+        nodes,
+        pred,
+        used,
+        measurement,
+        0,
+        seed=seed,
+        status=status,
+        n_edges=0,
+    )

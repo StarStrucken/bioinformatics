@@ -100,6 +100,96 @@ MEASUREMENTS = {
         "blocks": {"spatial": 1.0},
     },
 
+    # Random coordinate-permutation control. It copies the real centroid array,
+    # permutes coordinate rows once per seed, and uses those coordinates as the
+    # direct prediction without building a graph.
+    # Distance: Euclidean norm between real x/y and permuted predicted x/y.
+    # Refs: xenum/dump/random_controls.py:61-82, xenum/dump/graph.py:204-334
+    "random_permutation": {
+        "label": "random_permutation",
+        "blocks": {},
+    },
+
+    # Random-neighbor graph control. For each seed and k, every cell samples k
+    # distinct other cells; the sampled graph uses the common reconstruction.
+    # Distance: Euclidean prediction error after averaging sampled neighbors.
+    # Refs: xenum/dump/random_controls.py:86-154, xenum/dump/graph.py:272-334
+    "random_neighbors": {
+        "label": "random_neighbors",
+        "blocks": {},
+    },
+
+    # Raw SpaGCN XY adjacency graph. SpaGCN calculates pairwise distances from
+    # Xenium centroids; those distances are used directly as kNN neighbor
+    # distances instead of deriving a separate feature embedding.
+    # Distance: SpaGCN.calculate_adj_matrix(histology=False)[source, target].
+    # Refs: xenum/dump/spagcn.py:212-223, xenum/dump/spagcn.py:287-311
+    #       xenum/dump/spagcn.py:418-455, xenum/dump/graph.py:78-107
+    "spagcn_adjacency": {
+        "label": "spagcn_adjacency",
+        "blocks": {},
+    },
+
+    # SpaGCN run with expression matrix and XY-only SpaGCN adjacency. The latent
+    # graph-convolution embedding z is exported as a feature block.
+    # Distance: Euclidean norm on the z-scored SpaGCN latent embedding.
+    # Refs: xenum/dump/spagcn.py:159-370, xenum/dump/graph.py:15-25
+    "spagcn_xy_embedding": {
+        "label": "spagcn_xy_embedding",
+        "blocks": {"spagcn_xy_embedding": 1.0},
+    },
+
+    # SpaGCN run with expression matrix and XY-only SpaGCN adjacency. The
+    # assignment probability matrix q is exported as a feature block.
+    # Distance: Euclidean norm on the z-scored SpaGCN probability matrix.
+    # Refs: xenum/dump/spagcn.py:159-370, xenum/dump/graph.py:15-25
+    "spagcn_xy_probabilities": {
+        "label": "spagcn_xy_probabilities",
+        "blocks": {"spagcn_xy_probabilities": 1.0},
+    },
+
+    # SpaGCN run with expression matrix and XY + histology SpaGCN adjacency. The
+    # latent graph-convolution embedding z is exported as a feature block.
+    # Distance: Euclidean norm on the z-scored SpaGCN latent embedding.
+    # Refs: xenum/dump/spagcn.py:144-175, xenum/dump/spagcn.py:212-247
+    #       xenum/dump/spagcn.py:343-416, xenum/dump/graph.py:15-25
+    "spagcn_histology_embedding": {
+        "label": "spagcn_histology_embedding",
+        "blocks": {"spagcn_histology_embedding": 1.0},
+    },
+
+    # SpaGCN run with expression matrix and XY + histology SpaGCN adjacency. The
+    # assignment probability matrix q is exported as a feature block.
+    # Distance: Euclidean norm on the z-scored SpaGCN probability matrix.
+    # Refs: xenum/dump/spagcn.py:144-175, xenum/dump/spagcn.py:212-247
+    #       xenum/dump/spagcn.py:343-416, xenum/dump/graph.py:15-25
+    "spagcn_histology_probabilities": {
+        "label": "spagcn_histology_probabilities",
+        "blocks": {"spagcn_histology_probabilities": 1.0},
+    },
+
+    # LUNA self-trained expression-only coordinate generator. The wrapper writes
+    # LUNA train/test CSVs from the same Xenium expression matrix, trains with
+    # real target coordinates, infers zero-coordinate test rows, then aligns the
+    # generated layout back to real centroids.
+    # Distance: Euclidean XY error after similarity Procrustes alignment; no kNN.
+    # Refs: xenum/dump/luna.py:140-199, xenum/dump/luna.py:258-409
+    #       xenum/dump/graph.py:204-334
+    "luna_expression_self": {
+        "label": "luna_expression_self",
+        "blocks": {},
+    },
+
+    # LUNA transfer expression-only coordinate generator. A compatible external
+    # training dataset/checkpoint must be configured; otherwise the measurement
+    # is recorded as skipped and no self-trained fallback is used.
+    # Distance: Euclidean XY error after similarity Procrustes alignment; no kNN.
+    # Refs: xenum/dump/luna.py:413-429, xenum/dump/graph.py:204-334
+    "luna_expression_transfer": {
+        "label": "luna_expression_transfer",
+        "blocks": {},
+    },
+
     # Deprecated manual expression + morphology mix. Kept only so old cached
     # outputs can still be recognized.
     # Distance: Euclidean norm after concatenating expression and morphology.
@@ -170,6 +260,24 @@ HIDDEN_MEASUREMENTS = [
     "spatial",
 ]
 
+CONTROL_MEASUREMENTS = [
+    "random_permutation",
+    "random_neighbors",
+]
+
+SPAGCN_MEASUREMENTS = [
+    "spagcn_adjacency",
+    "spagcn_xy_embedding",
+    "spagcn_xy_probabilities",
+    "spagcn_histology_embedding",
+    "spagcn_histology_probabilities",
+]
+
+LUNA_MEASUREMENTS = [
+    "luna_expression_self",
+    "luna_expression_transfer",
+]
+
 ACTIVE_MEASUREMENTS = VISIBLE_MEASUREMENTS + HIDDEN_MEASUREMENTS
 
 DEPRECATED_MEASUREMENTS = {
@@ -187,6 +295,12 @@ LEAKY_MEASUREMENTS = {
     "spatial",
     "mix",
     "expr_morph_spatial",
+    "spagcn_adjacency",
+    "spagcn_xy_embedding",
+    "spagcn_xy_probabilities",
+    "spagcn_histology_embedding",
+    "spagcn_histology_probabilities",
+    "luna_expression_self",
 }
 
-MEASUREMENT_ORDER = VISIBLE_MEASUREMENTS + OPTIONAL_MEASUREMENTS + HIDDEN_MEASUREMENTS
+MEASUREMENT_ORDER = VISIBLE_MEASUREMENTS + OPTIONAL_MEASUREMENTS + HIDDEN_MEASUREMENTS + CONTROL_MEASUREMENTS + SPAGCN_MEASUREMENTS + LUNA_MEASUREMENTS

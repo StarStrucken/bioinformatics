@@ -30,6 +30,9 @@ logs/
 # Generated outputs
 outputs/*
 !outputs/bench_*.csv
+!outputs/benchmark_matrix_*.csv
+!outputs/benchmark_boxplot.png
+!outputs/benchmark_boxplot_*.png
 !outputs/*/
 outputs/*/*
 
@@ -45,16 +48,6 @@ outputs/*/reports/*
 
 outputs/*/cache/
 outputs/*/diagnostics/
-
-# Optional external baseline examples.
-!outputs/*/baselines/
-outputs/*/baselines/*
-!outputs/*/baselines/spagcn/
-outputs/*/baselines/spagcn/*
-!outputs/*/baselines/spagcn/README.md
-!outputs/*/baselines/spagcn/summary.json
-!outputs/*/baselines/spagcn/bench_xy.csv
-!outputs/*/baselines/spagcn/domains_summary.csv
 
 # HPC
 slurm-*.out
