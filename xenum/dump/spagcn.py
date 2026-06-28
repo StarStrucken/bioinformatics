@@ -32,6 +32,7 @@ from xenum_paths import data_dir
 
 XY_VARIANT = "spagcn_xy"
 HISTOLOGY_VARIANT = "spagcn_histology"
+ADJACENCY_MEASUREMENT = "spagcn_adjacency"
 VARIANT_MEASUREMENTS = {
     XY_VARIANT: ("spagcn_xy_embedding", "spagcn_xy_probabilities"),
     HISTOLOGY_VARIANT: ("spagcn_histology_embedding", "spagcn_histology_probabilities"),
@@ -76,13 +77,6 @@ def find_default_image(dataset_id):
     candidates = []
 
     if root.exists():
-        candidates.extend(sorted((root / "morphology_focus").glob("*.ome.tif")))
-        candidates.extend(sorted((root / "morphology_focus").glob("*.tif")))
-        candidates.extend(sorted((root / "morphology_focus").glob("*.tiff")))
-        candidates.extend(sorted((root / "morphology_focus").glob("*.png")))
-        candidates.extend(sorted((root / "morphology_focus").glob("*.jpg")))
-        candidates.extend(sorted((root / "morphology_focus").glob("*.jpeg")))
-
         for name in [
             "morphology.ome.tif",
             "morphology.tif",
@@ -94,11 +88,79 @@ def find_default_image(dataset_id):
             if p.exists():
                 candidates.append(p)
 
+        candidates.extend(sorted((root / "morphology_focus").glob("*.ome.tif")))
+        candidates.extend(sorted((root / "morphology_focus").glob("*.tif")))
+        candidates.extend(sorted((root / "morphology_focus").glob("*.tiff")))
+        candidates.extend(sorted((root / "morphology_focus").glob("*.png")))
+        candidates.extend(sorted((root / "morphology_focus").glob("*.jpg")))
+        candidates.extend(sorted((root / "morphology_focus").glob("*.jpeg")))
+
     return candidates[0] if candidates else None
+
+def normalize_image_array(arr, axes=None):
+    img = np.asarray(arr)
+
+    if axes and len(axes) == img.ndim:
+        axes = list(axes)
+        squeeze = [i for i, size in enumerate(img.shape) if size == 1]
+
+        if squeeze:
+            img = np.squeeze(img, axis=tuple(squeeze))
+            axes = [axis for i, axis in enumerate(axes) if i not in squeeze]
+
+        lower = [str(axis).lower() for axis in axes]
+
+        if "y" in lower and "x" in lower:
+            y_axis = lower.index("y")
+            x_axis = lower.index("x")
+            rest = [i for i in range(img.ndim) if i not in {y_axis, x_axis}]
+            img = np.transpose(img, [y_axis, x_axis, *rest])
+
+            if rest:
+                img = img.reshape(img.shape[0], img.shape[1], int(np.prod(img.shape[2:])))
+            else:
+                img = img[:, :, None]
+    else:
+        img = np.squeeze(img)
+
+        if img.ndim == 3 and img.shape[-1] not in {1, 2, 3, 4}:
+            img = np.moveaxis(img, 0, -1)
+
+    if img.ndim == 2:
+        img = img[:, :, None]
+    elif img.ndim != 3:
+        raise SpaGCNSkip("unsupported image shape {}".format(img.shape))
+
+    if img.shape[2] == 1:
+        img = np.repeat(img, 3, axis=2)
+    elif img.shape[2] == 2:
+        third = img.mean(axis=2, keepdims=True)
+        img = np.concatenate([img, third], axis=2)
+    elif img.shape[2] > 3:
+        img = img[:, :, :3]
+
+    return np.asarray(img)
+
+def read_tiff_image(path):
+    try:
+        import tifffile
+    except Exception as e:
+        raise SpaGCNSkip("tifffile import failed: {}: {}".format(type(e).__name__, e)) from e
+
+    try:
+        with tifffile.TiffFile(path) as tif:
+            series = tif.series[0]
+            return normalize_image_array(series.asarray(), axes=getattr(series, "axes", None))
+    except Exception as e:
+        raise SpaGCNSkip("tifffile read failed for {}: {}: {}".format(path, type(e).__name__, e)) from e
 
 def read_image(path):
     if path is None:
         raise SpaGCNSkip("no image path")
+
+    suffixes = [s.lower() for s in Path(path).suffixes]
+    if any(s in {".tif", ".tiff"} for s in suffixes):
+        return read_tiff_image(path)
 
     try:
         import cv2
@@ -110,16 +172,7 @@ def read_image(path):
     if img is None:
         raise SpaGCNSkip("cv2.imread returned None")
 
-    img = np.asarray(img)
-
-    if img.ndim == 2:
-        img = np.stack([img, img, img], axis=2)
-    elif img.ndim == 3 and img.shape[2] > 3:
-        img = img[:, :, :3]
-    elif img.ndim != 3:
-        raise SpaGCNSkip("unsupported image shape {}".format(img.shape))
-
-    return img
+    return normalize_image_array(img)
 
 def image_pixel_coords(coords, image):
     x = coords[:, 0]
@@ -231,6 +284,32 @@ def write_matrix_with_ids(path, nodes, matrix, prefix):
     df.insert(0, "node", np.arange(len(nodes), dtype=np.int64))
     df.to_csv(path, index=False)
 
+def neighbor_lists_from_adj(adj):
+    adj = np.asarray(adj, dtype=np.float32)
+
+    if adj.ndim != 2 or adj.shape[0] != adj.shape[1]:
+        raise ValueError("SpaGCN adjacency must be square, got {}".format(adj.shape))
+
+    best = []
+
+    for i in range(adj.shape[0]):
+        row = adj[i]
+        order = np.argsort(row, kind="stable")
+        vals = []
+
+        for j in order:
+            if int(j) == i:
+                continue
+
+            distance = float(row[j])
+
+            if np.isfinite(distance):
+                vals.append((int(j), distance))
+
+        best.append(vals)
+
+    return best
+
 def skipped_rows(dataset_id, nodes, measurements, bench_k_values, status, reason, seed=None):
     rows = []
 
@@ -254,6 +333,12 @@ def skipped_rows(dataset_id, nodes, measurements, bench_k_values, status, reason
             })
 
     return rows
+
+def variant_status_measurements(variant, measurements):
+    if variant == XY_VARIANT:
+        return (ADJACENCY_MEASUREMENT, *measurements)
+
+    return measurements
 
 def train_variant(spg, dataset_id, out_dir, variant, adata, nodes, coords, use_histology):
     started = time.perf_counter()
@@ -328,7 +413,46 @@ def train_variant(spg, dataset_id, out_dir, variant, adata, nodes, coords, use_h
     return {
         f"{variant}_embedding": zscore(embedding),
         f"{variant}_probabilities": zscore(probabilities),
-    }, meta
+    }, meta, adj
+
+def benchmark_spagcn_adjacency(out_dir, dataset_id, nodes, node_cols, blocks, adj, bench_k_values):
+    rows = []
+    summaries = {}
+    measurement = ADJACENCY_MEASUREMENT
+    best = neighbor_lists_from_adj(adj)
+
+    for kk in bench_k_values:
+        edges, graph_nodes = edges_from_neighbor_lists(
+            nodes[node_cols],
+            blocks,
+            measurement,
+            best,
+            kk,
+        )
+        chk = checks(nodes, graph_nodes, edges, measurement)
+        pred_df, row = prediction_from_edges(
+            dataset_id,
+            nodes[node_cols],
+            edges,
+            measurement,
+            kk,
+            seed=int(SPAGCN_SEED),
+        )
+        rows.append(row)
+
+        graph_nodes.to_csv(out_dir / f"nodes_{measurement}_k{kk}.csv", index=False)
+        edges.to_csv(out_dir / f"edges_{measurement}_k{kk}.csv", index=False)
+        pred_df.to_csv(out_dir / f"predictions_{measurement}_k{kk}.csv", index=False)
+        (out_dir / f"checks_{measurement}_k{kk}.json").write_text(json.dumps(chk, indent=2) + "\n")
+
+        if kk == int(K):
+            graph_nodes.to_csv(out_dir / f"nodes_{measurement}.csv", index=False)
+            edges.to_csv(out_dir / f"edges_{measurement}.csv", index=False)
+            (out_dir / f"checks_{measurement}.json").write_text(json.dumps(chk, indent=2) + "\n")
+            write_npz(out_dir, measurement, graph_nodes, edges)
+            summaries[measurement] = chk
+
+    return rows, summaries
 
 def benchmark_spagcn_blocks(out_dir, dataset_id, nodes, node_cols, blocks, bench_k_values, measurements):
     rows = []
@@ -419,7 +543,7 @@ def run_spagcn_measurements(out_dir, dataset_id, adata, nodes, node_cols, blocks
         use_histology = variant == HISTOLOGY_VARIANT
 
         try:
-            variant_blocks, meta = train_variant(
+            variant_blocks, meta, adj = train_variant(
                 spg,
                 dataset_id,
                 out_dir,
@@ -430,6 +554,21 @@ def run_spagcn_measurements(out_dir, dataset_id, adata, nodes, node_cols, blocks
                 use_histology,
             )
             blocks.update(variant_blocks)
+
+            if variant == XY_VARIANT:
+                adj_rows, adj_summaries = benchmark_spagcn_adjacency(
+                    out_dir,
+                    dataset_id,
+                    nodes,
+                    node_cols,
+                    blocks,
+                    adj,
+                    bench_k_values,
+                )
+                rows.extend(adj_rows)
+                summaries.update(adj_summaries)
+                meta["adjacency_measurement"] = ADJACENCY_MEASUREMENT
+
             part_rows, part_summaries = benchmark_spagcn_blocks(
                 out_dir,
                 dataset_id,
@@ -444,7 +583,15 @@ def run_spagcn_measurements(out_dir, dataset_id, adata, nodes, node_cols, blocks
             status["variants"][variant] = meta
         except SpaGCNSkip as e:
             reason = str(e)
-            rows.extend(skipped_rows(dataset_id, nodes, measurements, bench_k_values, "skipped", reason, seed=SPAGCN_SEED))
+            rows.extend(skipped_rows(
+                dataset_id,
+                nodes,
+                variant_status_measurements(variant, measurements),
+                bench_k_values,
+                "skipped",
+                reason,
+                seed=SPAGCN_SEED,
+            ))
             status["variants"][variant] = {
                 "status": "skipped",
                 "reason": reason,
@@ -452,7 +599,15 @@ def run_spagcn_measurements(out_dir, dataset_id, adata, nodes, node_cols, blocks
             print(f"{variant} skipped: {reason}", flush=True)
         except Exception as e:
             reason = "{}: {}".format(type(e).__name__, e)
-            rows.extend(skipped_rows(dataset_id, nodes, measurements, bench_k_values, "failed", reason, seed=SPAGCN_SEED))
+            rows.extend(skipped_rows(
+                dataset_id,
+                nodes,
+                variant_status_measurements(variant, measurements),
+                bench_k_values,
+                "failed",
+                reason,
+                seed=SPAGCN_SEED,
+            ))
             status["variants"][variant] = {
                 "status": "failed",
                 "reason": reason,

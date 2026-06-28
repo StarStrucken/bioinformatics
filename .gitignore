@@ -32,6 +32,7 @@ outputs/*
 !outputs/bench_*.csv
 !outputs/benchmark_matrix_*.csv
 !outputs/benchmark_boxplot.png
+!outputs/benchmark_boxplot_*.png
 !outputs/*/
 outputs/*/*
 

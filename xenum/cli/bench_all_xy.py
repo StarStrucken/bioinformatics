@@ -118,12 +118,43 @@ def matrix(selected, metric):
     out = clean.pivot_table(index="measurement", columns="dataset", values=metric, aggfunc="first")
     return out.reset_index()
 
-def render_boxplot(selected):
-    clean = selected.dropna(subset=["median_xy_error"]).copy()
+def benchmark_plot_rows(benchmarks):
+    clean = benchmarks.copy()
+    if "status" in clean.columns:
+        clean = clean[clean["status"].eq("ok")].copy()
+    clean = clean.dropna(subset=["median_xy_error"]).copy()
 
     if clean.empty:
-        return None
+        return clean
 
+    clean["dataset"] = clean["dataset"].astype(str)
+    clean["measurement"] = clean["measurement"].astype(str)
+    clean["median_xy_error"] = pd.to_numeric(clean["median_xy_error"], errors="coerce")
+
+    if "spatial_best_median_xy_error" not in clean.columns:
+        spatial_best = (
+            clean[clean["measurement"].eq("spatial")]
+            .groupby("dataset")["median_xy_error"]
+            .min()
+        )
+        clean["spatial_best_median_xy_error"] = clean["dataset"].map(spatial_best)
+
+    clean["spatial_best_median_xy_error"] = pd.to_numeric(
+        clean["spatial_best_median_xy_error"],
+        errors="coerce",
+    )
+    clean["normalized_error"] = np.divide(
+        clean["median_xy_error"],
+        clean["spatial_best_median_xy_error"],
+        out=np.full(len(clean), np.nan, dtype=float),
+        where=clean["spatial_best_median_xy_error"].to_numpy(dtype=float) > 0,
+    )
+    clean["improvement_pct"] = 100.0 * (1.0 - clean["normalized_error"])
+
+    return clean
+
+
+def measurement_plot_order(clean):
     order = (
         clean
         .groupby("measurement")["median_xy_error"]
@@ -132,44 +163,172 @@ def render_boxplot(selected):
         .index
         .tolist()
     )
-    data = [
-        clean[clean["measurement"].eq(measurement)]["median_xy_error"].to_numpy(dtype=float)
-        for measurement in order
-    ]
-    leaky = {
-        measurement: bool(clean[clean["measurement"].eq(measurement)]["leaky"].fillna(False).astype(bool).any())
-        for measurement in order
+    return order
+
+
+def dataset_color_map(datasets):
+    cmap = plt.get_cmap("tab20" if len(datasets) > 10 else "tab10")
+    return {
+        dataset: cmap(i % cmap.N)
+        for i, dataset in enumerate(datasets)
     }
 
-    width = max(10.0, min(24.0, 0.45 * len(order) + 5.0))
+
+def render_grouped_boxplot(
+    benchmarks,
+    *,
+    metric,
+    ylabel,
+    title,
+    order,
+    datasets,
+    dataset_colors,
+    yscale=None,
+    reference_line=None,
+):
+    clean = benchmarks.dropna(subset=[metric]).copy()
+
+    if yscale == "log":
+        clean = clean[clean[metric] > 0].copy()
+
+    if clean.empty:
+        return None
+
+    order = [measurement for measurement in order if clean["measurement"].eq(measurement).any()]
+    if not order or not datasets:
+        return None
+
+    leaky = {
+        (measurement, dataset): bool(
+            clean[
+                clean["measurement"].eq(measurement)
+                & clean["dataset"].eq(dataset)
+            ]["leaky"].fillna(False).astype(bool).any()
+        )
+        for measurement in order
+        for dataset in datasets
+    }
+
+    dataset_step = 0.18
+    box_width = 0.11 if len(datasets) > 8 else 0.13
+    group_stride = max(1.25, (len(datasets) - 1) * dataset_step + 0.75)
+    centers = np.arange(len(order), dtype=float) * group_stride
+    offsets = (np.arange(len(datasets), dtype=float) - (len(datasets) - 1) / 2.0) * dataset_step
+
+    data = []
+    positions = []
+    box_meta = []
+    point_meta = []
+    for measurement_index, measurement in enumerate(order):
+        center = centers[measurement_index]
+
+        for dataset_index, dataset in enumerate(datasets):
+            group = clean[
+                clean["measurement"].eq(measurement)
+                & clean["dataset"].eq(dataset)
+            ].copy()
+
+            if "k" in group.columns:
+                group["_k_sort"] = pd.to_numeric(group["k"], errors="coerce")
+                sort_cols = ["_k_sort"]
+                if "seed" in group.columns:
+                    group["_seed_sort"] = pd.to_numeric(group["seed"], errors="coerce")
+                    sort_cols.append("_seed_sort")
+                group = group.sort_values(sort_cols, na_position="last")
+
+            vals = group[metric].to_numpy(dtype=float)
+
+            if vals.size == 0:
+                continue
+
+            position = center + offsets[dataset_index]
+            point_meta.append((position, measurement, dataset, vals))
+
+            if vals.size > 1:
+                data.append(vals)
+                positions.append(position)
+                box_meta.append((measurement, dataset, vals))
+
+    width = max(11.0, min(36.0, 0.62 * len(order) + 0.22 * len(datasets) + 5.0))
     fig, ax = plt.subplots(figsize=(width, 5.5))
-    bp = ax.boxplot(data, patch_artist=True, showfliers=False)
 
-    for measurement, box in zip(order, bp["boxes"]):
-        box.set_facecolor("#4C78A8")
-        box.set_alpha(0.7)
+    if data:
+        bp = ax.boxplot(
+            data,
+            positions=positions,
+            widths=box_width,
+            patch_artist=True,
+            showfliers=False,
+            manage_ticks=False,
+        )
 
-        if leaky[measurement]:
-            box.set_hatch("//")
+        for i, (measurement, dataset, _vals) in enumerate(box_meta):
+            box = bp["boxes"][i]
+            box.set_facecolor(dataset_colors[dataset])
+            box.set_alpha(0.62)
             box.set_edgecolor("#222222")
-            box.set_linewidth(0.9)
+            box.set_linewidth(0.8)
 
-    rng = np.random.default_rng(0)
-    for i, measurement in enumerate(order, start=1):
-        vals = clean[clean["measurement"].eq(measurement)]["median_xy_error"].to_numpy(dtype=float)
-        jitter = rng.normal(0.0, 0.035, size=len(vals))
-        ax.scatter(np.full(len(vals), i, dtype=float) + jitter, vals, s=16, color="#111111", alpha=0.75, zorder=3)
+            if leaky[(measurement, dataset)]:
+                box.set_hatch("//")
 
-    ax.set_xticks(np.arange(1, len(order) + 1))
+            for whisker in bp["whiskers"][2 * i: 2 * i + 2]:
+                whisker.set_color("#333333")
+                whisker.set_linewidth(0.75)
+            for cap in bp["caps"][2 * i: 2 * i + 2]:
+                cap.set_color("#333333")
+                cap.set_linewidth(0.75)
+            bp["medians"][i].set_color("#111111")
+            bp["medians"][i].set_linewidth(1.0)
+
+    for position, _measurement, dataset, vals in point_meta:
+        if vals.size == 1:
+            jitter = np.zeros(1, dtype=float)
+            point_size = 20
+        else:
+            jitter = np.linspace(-box_width * 0.18, box_width * 0.18, vals.size)
+            point_size = 14
+
+        ax.scatter(
+            np.full(len(vals), position, dtype=float) + jitter,
+            vals,
+            s=point_size,
+            color=dataset_colors[dataset],
+            edgecolor="#111111",
+            linewidth=0.25,
+            alpha=0.9,
+            zorder=3,
+        )
+
+    for i in range(len(centers) - 1):
+        ax.axvline((centers[i] + centers[i + 1]) / 2.0, color="#dddddd", linewidth=0.7, zorder=0)
+
+    if yscale:
+        ax.set_yscale(yscale)
+    if reference_line is not None:
+        y, label = reference_line
+        ax.axhline(y, color="#333333", linestyle="--", linewidth=0.9, label=label, zorder=1)
+
+    ax.set_xlim(centers[0] - group_stride * 0.55, centers[-1] + group_stride * 0.55)
+    ax.set_xticks(centers)
     ax.set_xticklabels(order, rotation=35, ha="right")
-    ax.set_ylabel("median xy error")
-    ax.set_title("Global measurement comparison")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
     ax.grid(axis="y", alpha=0.2)
 
-    if any(leaky.values()):
-        from matplotlib.patches import Patch
+    from matplotlib.patches import Patch
 
-        ax.legend(handles=[Patch(facecolor="#4C78A8", edgecolor="#222222", hatch="//", label="leaky")], loc="best")
+    handles = [
+        Patch(facecolor=dataset_colors[dataset], edgecolor="#222222", label=dataset)
+        for dataset in datasets
+    ]
+    if any(leaky.values()):
+        handles.append(Patch(facecolor="#ffffff", edgecolor="#222222", hatch="//", label="leaky"))
+    if reference_line is not None:
+        from matplotlib.lines import Line2D
+
+        handles.append(Line2D([0], [0], color="#333333", linestyle="--", linewidth=0.9, label=reference_line[1]))
+    ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(1.01, 1.0), borderaxespad=0.0)
 
     fig.tight_layout()
     return fig
@@ -187,10 +346,53 @@ def main():
     atomic_csv(matrix(selected, "median_xy_error"), OUTPUTS / "benchmark_matrix_median.csv")
     atomic_csv(matrix(selected, "p90_xy_error"), OUTPUTS / "benchmark_matrix_p90.csv")
 
-    fig = render_boxplot(selected)
-    if fig is not None:
-        atomic_figure(fig, OUTPUTS / "benchmark_boxplot.png")
-        plt.close(fig)
+    plot_rows = benchmark_plot_rows(all_rows)
+    if not plot_rows.empty:
+        order = measurement_plot_order(plot_rows)
+        datasets = sorted(plot_rows["dataset"].dropna().unique().tolist())
+        dataset_colors = dataset_color_map(datasets)
+        figures = [
+            (
+                "benchmark_boxplot.png",
+                "median_xy_error",
+                "median xy error (log scale)",
+                "Absolute median xy error by dataset",
+                "log",
+                None,
+            ),
+            (
+                "benchmark_boxplot_normalized_error.png",
+                "normalized_error",
+                "median xy error / spatial best median xy error",
+                "Normalized median xy error by dataset",
+                None,
+                (1.0, "spatial best"),
+            ),
+            (
+                "benchmark_boxplot_percent_improvement.png",
+                "improvement_pct",
+                "improvement vs spatial best (%)",
+                "Percentage improvement over spatial best by dataset",
+                None,
+                (0.0, "spatial best"),
+            ),
+        ]
+
+        for filename, metric, ylabel, title, yscale, reference_line in figures:
+            fig = render_grouped_boxplot(
+                plot_rows,
+                metric=metric,
+                ylabel=ylabel,
+                title=title,
+                order=order,
+                datasets=datasets,
+                dataset_colors=dataset_colors,
+                yscale=yscale,
+                reference_line=reference_line,
+            )
+            if fig is not None:
+                atomic_figure(fig, OUTPUTS / filename)
+                plt.close(fig)
 
     if not summary.empty:
         print(summary.to_string(index=False))

@@ -119,6 +119,17 @@ MEASUREMENTS = {
         "blocks": {},
     },
 
+    # Raw SpaGCN XY adjacency graph. SpaGCN calculates pairwise distances from
+    # Xenium centroids; those distances are used directly as kNN neighbor
+    # distances instead of deriving a separate feature embedding.
+    # Distance: SpaGCN.calculate_adj_matrix(histology=False)[source, target].
+    # Refs: xenum/dump/spagcn.py:212-223, xenum/dump/spagcn.py:287-311
+    #       xenum/dump/spagcn.py:418-455, xenum/dump/graph.py:78-107
+    "spagcn_adjacency": {
+        "label": "spagcn_adjacency",
+        "blocks": {},
+    },
+
     # SpaGCN run with expression matrix and XY-only SpaGCN adjacency. The latent
     # graph-convolution embedding z is exported as a feature block.
     # Distance: Euclidean norm on the z-scored SpaGCN latent embedding.
@@ -140,7 +151,8 @@ MEASUREMENTS = {
     # SpaGCN run with expression matrix and XY + histology SpaGCN adjacency. The
     # latent graph-convolution embedding z is exported as a feature block.
     # Distance: Euclidean norm on the z-scored SpaGCN latent embedding.
-    # Refs: xenum/dump/spagcn.py:159-370, xenum/dump/graph.py:15-25
+    # Refs: xenum/dump/spagcn.py:144-175, xenum/dump/spagcn.py:212-247
+    #       xenum/dump/spagcn.py:343-416, xenum/dump/graph.py:15-25
     "spagcn_histology_embedding": {
         "label": "spagcn_histology_embedding",
         "blocks": {"spagcn_histology_embedding": 1.0},
@@ -149,7 +161,8 @@ MEASUREMENTS = {
     # SpaGCN run with expression matrix and XY + histology SpaGCN adjacency. The
     # assignment probability matrix q is exported as a feature block.
     # Distance: Euclidean norm on the z-scored SpaGCN probability matrix.
-    # Refs: xenum/dump/spagcn.py:159-370, xenum/dump/graph.py:15-25
+    # Refs: xenum/dump/spagcn.py:144-175, xenum/dump/spagcn.py:212-247
+    #       xenum/dump/spagcn.py:343-416, xenum/dump/graph.py:15-25
     "spagcn_histology_probabilities": {
         "label": "spagcn_histology_probabilities",
         "blocks": {"spagcn_histology_probabilities": 1.0},
@@ -253,6 +266,7 @@ CONTROL_MEASUREMENTS = [
 ]
 
 SPAGCN_MEASUREMENTS = [
+    "spagcn_adjacency",
     "spagcn_xy_embedding",
     "spagcn_xy_probabilities",
     "spagcn_histology_embedding",
@@ -281,6 +295,7 @@ LEAKY_MEASUREMENTS = {
     "spatial",
     "mix",
     "expr_morph_spatial",
+    "spagcn_adjacency",
     "spagcn_xy_embedding",
     "spagcn_xy_probabilities",
     "spagcn_histology_embedding",

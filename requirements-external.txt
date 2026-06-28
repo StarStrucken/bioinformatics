@@ -10,6 +10,7 @@ torch
 python-igraph
 louvain>=0.8.0
 opencv-python
+tifffile
 
 # LUNA uses a dedicated Python 3.9 environment and is invoked through
 # XENUM_LUNA_PYTHON, so its older PyTorch/CUDA stack is not installed here.
