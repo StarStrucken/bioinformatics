@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=120G
-#SBATCH --time=72:00:00
+#SBATCH --time=2-00:00:00
 #SBATCH --chdir=/work/hi202241/bioinformatics
 #SBATCH --output=/work/hi202241/bioinformatics/logs/%x-%j.out
 #SBATCH --error=/work/hi202241/bioinformatics/logs/%x-%j.err
