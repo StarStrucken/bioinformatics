@@ -12,10 +12,6 @@ fi
 mkdir -p "$XENUM_OUTPUT_DIR"
 CURRENT_DATASET=""
 
-rebuild_global_outputs() {
-  run_python -m xenum.cli.bench_all_xy || true
-}
-
 dataset_loop_ids() {
   if [[ -n "${XENUM_DATASET_IDS:-}" ]]; then
     printf '%s\n' $XENUM_DATASET_IDS
@@ -33,7 +29,6 @@ mark_interrupted() {
     mv "$tmp" "$out_dir/luna_pipeline_status.json"
   fi
 
-  rebuild_global_outputs
   exit 130
 }
 
@@ -45,7 +40,6 @@ for dataset_id in $(dataset_loop_ids); do
   run_python -m xenum.cli.luna_dataset "$dataset_id"
   run_python -m xenum.reports.render "$dataset_id" || true
   CURRENT_DATASET=""
-  rebuild_global_outputs
 done
 
-rebuild_global_outputs
+bash scripts/bench_all.sh

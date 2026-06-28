@@ -13,10 +13,6 @@ fi
 mkdir -p "$XENUM_OUTPUT_DIR"
 CURRENT_DATASET=""
 
-rebuild_global_outputs() {
-  run_python -m xenum.cli.bench_all_xy || true
-}
-
 write_pipeline_status() {
   local dataset_id="$1"
   local status="$2"
@@ -41,7 +37,6 @@ mark_interrupted() {
     write_pipeline_status "$CURRENT_DATASET" "interrupted"
   fi
 
-  rebuild_global_outputs
   exit 130
 }
 
@@ -83,7 +78,6 @@ dump_outputs_current() {
     external/LUNA \
     xenum/dump \
     xenum/reports \
-    xenum/cli/bench_all_xy.py \
     xenum_measurements.py \
     xenum_common.py \
     xenum_paths.py; then
@@ -145,7 +139,6 @@ for dataset_id in $(dataset_loop_ids); do
 
   write_pipeline_status "$dataset_id" "completed"
   CURRENT_DATASET=""
-  rebuild_global_outputs
 done
 
-rebuild_global_outputs
+bash scripts/bench_all.sh

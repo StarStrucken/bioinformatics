@@ -33,7 +33,7 @@ done
 
 if [[ "${#selected[@]}" -eq 0 ]]; then
   echo "no local datasets with n_cells < 1000"
-  run_python -m xenum.cli.bench_all_xy || true
+  bash scripts/bench_all.sh || true
   exit 0
 fi
 
