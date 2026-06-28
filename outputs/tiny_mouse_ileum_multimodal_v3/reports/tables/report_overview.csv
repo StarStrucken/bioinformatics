@@ -1,0 +1,15 @@
+measurement,k,seed,status,leaky,mean_xy_error,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
+spagcn_adjacency,2,100.0,ok,True,4.2007,3.7535,8.0777,1.0,0.5255,0.5255,2,7.1431
+spatial,2,,ok,True,7.5028,7.1431,13.9471,1.0,1.0,1.0,2,7.1431
+morphology_image,1,,ok,False,30.7445,7.829,24.6702,0.9722,1.096,0.8804,2,7.1431
+morphology_image_all,1,,ok,False,30.7445,7.829,24.6702,0.9722,1.096,0.8804,2,7.1431
+morphology_image_histogram,1,,ok,False,22.0697,7.829,15.7687,0.9722,1.096,0.8804,2,7.1431
+learned_mix,0,,ok,False,24.4557,7.8543,24.3913,1.0,1.0996,,2,7.1431
+morphology_image_summary,1,,ok,False,8.9928,7.8796,14.466,0.9722,1.1031,0.8861,2,7.1431
+morphology_image_texture,1,,ok,False,31.7784,8.3422,23.3714,0.9722,1.1679,0.9381,2,7.1431
+spagcn_xy_embedding,1,100.0,ok,True,30.6422,8.8929,21.0771,0.9722,1.245,1.0,2,7.1431
+expression,1,,ok,False,39.8616,15.9775,77.8114,1.0,2.2368,1.7967,2,7.1431
+morphology,1,,ok,False,130.0317,21.0284,496.435,0.9722,2.9439,2.3646,2,7.1431
+random_neighbors,3,1.0,ok,False,169.0007,134.2059,295.7841,1.0,18.7882,18.5797,2,7.1431
+random_permutation,0,10.0,ok,False,189.9758,205.3623,407.3021,1.0,28.7498,,2,7.1431
+spagcn_xy_probabilities,32,100.0,ok,True,171.9353,245.7403,273.0851,1.0,34.4025,1.0665,2,7.1431
