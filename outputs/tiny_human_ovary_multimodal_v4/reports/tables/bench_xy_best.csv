@@ -1,0 +1,2 @@
+dataset,measurement,k,seed,leaky,mean_xy_error,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
+tiny_human_ovary_multimodal_v4,spagcn_adjacency,4,100.0,True,2.766273021697998,2.207094669342041,5.679028034210205,1.0,0.8751218305850118,0.8751218305850118,4,2.522042751312256

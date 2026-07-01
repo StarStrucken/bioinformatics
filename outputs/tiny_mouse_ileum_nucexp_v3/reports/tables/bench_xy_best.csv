@@ -1,0 +1,2 @@
+dataset,measurement,k,seed,leaky,mean_xy_error,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
+tiny_mouse_ileum_nucexp_v3,spagcn_adjacency,2,100.0,True,5.473184108734131,5.065574169158936,8.940007209777832,1.0,0.5480368538527326,0.49530223552940006,3,9.24312686920166

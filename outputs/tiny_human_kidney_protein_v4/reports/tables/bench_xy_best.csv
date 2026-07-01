@@ -1,0 +1,2 @@
+dataset,measurement,k,seed,leaky,mean_xy_error,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
+tiny_human_kidney_protein_v4,spagcn_adjacency,5,100.0,True,3.0859975814819336,2.2175509929656982,6.347654819488525,0.9972067039106144,0.819731964757745,0.7926589409315419,4,2.705214738845825

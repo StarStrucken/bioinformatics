@@ -1,0 +1,2 @@
+dataset,measurement,k,seed,leaky,mean_xy_error,median_xy_error,p90_xy_error,coverage,median_vs_spatial_best,median_vs_spatial_same_k,spatial_best_k,spatial_best_median_xy_error
+tiny_mouse_ileum_multimodal_v3,spagcn_adjacency,2,100.0,True,4.200708866119385,3.7535269260406494,8.077692985534668,1.0,0.525476691011782,0.525476691011782,2,7.143089294433594

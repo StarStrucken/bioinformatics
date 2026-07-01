@@ -2,6 +2,7 @@ measurement,k,seed,status,leaky,mean_xy_error,median_xy_error,p90_xy_error,cover
 spagcn_adjacency,5,100.0,ok,True,2.8237,2.164,5.8023,1.0,0.8806,0.8741,2,2.4573
 spatial,2,,ok,True,3.3281,2.4573,7.8317,0.9984,1.0,1.0,2,2.4573
 spagcn_xy_embedding,1,100.0,ok,True,157.2845,51.2698,492.5,0.9953,20.8639,7.5252,2,2.4573
+luna_expression_self,0,1.0,ok,True,78.1126,74.3863,120.4711,1.0,30.271,,2,2.4573
 learned_mix,0,,ok,False,209.0305,95.5489,504.2454,1.0,38.8831,,2,2.4573
 expression,1,,ok,False,218.2722,119.1272,538.2098,0.9953,48.4781,17.4849,2,2.4573
 spagcn_xy_probabilities,1,100.0,ok,True,240.8842,131.3398,552.0779,0.9921,53.448,19.2775,2,2.4573
